@@ -1,8 +1,6 @@
 # ESP32 IoT Configuration Panel with GSM/LTE Integration
 
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-ESP32-blue.svg)](https://platformio.org/)
-[![Arduino](https://img.shields.io/badge/Framework-Arduino-green.svg)](https://www.arduino.cc/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-2.1.0-orange.svg)](https://github.com/yourusername/esp32-monitoring/releases)
 
 A comprehensive ESP32-based IoT monitoring and configuration system with dual-mode WiFi (Access Point + Station) and GSM/LTE modem integration. Features a modern web-based dashboard for device management, real-time status monitoring, and cellular communication capabilities.
