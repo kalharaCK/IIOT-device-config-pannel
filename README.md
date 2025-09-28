@@ -284,9 +284,6 @@ Enable serial monitoring at 115200 baud to view debug information:
 3. Clear SPIFFS partition
 4. Re-upload firmware
 
-## 🤝 Contributing
-
-We welcome contributions! Please follow these guidelines:
 
 ### **Development Setup**
 1. Fork the repository
@@ -307,12 +304,5 @@ We welcome contributions! Please follow these guidelines:
 - Provide serial output
 - Describe steps to reproduce
 
-## 🔄 Version History
-
-- **v2.1.0** - Enhanced documentation, improved caching, better error handling
-- **v2.0.0** - Added GSM integration, modern web dashboard
-- **v1.0.0** - Initial release with basic WiFi functionality
-
----
 
 **Made with ❤️ for the IoT community**
