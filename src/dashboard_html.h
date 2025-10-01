@@ -2,7 +2,7 @@
  * @file dashboard_html.h
  * @brief Embedded Web Dashboard for ESP32 IoT Configuration Panel
  * @author IoT Device Dashboard Project
- * @version 2.1.0
+ * @version 2.2.0
  * @date 2025-01-30
  * 
  * @details
@@ -13,6 +13,7 @@
  * @section features Dashboard Features
  * - Modern responsive design with dark theme
  * - Dual-mode operation (WiFi and GSM modes)
+ * - Email configuration and testing
  * - Real-time status monitoring and updates
  * - Interactive configuration forms
  * - Captive portal support
@@ -23,13 +24,16 @@
  * 1. **User Management**: User profile configuration and system information
  * 2. **WiFi Configuration**: Network scanning, connection, and status monitoring
  * 3. **GSM Settings**: GSM operations, testing, and network information
+ * 4. **Email Settings**: Email configuration and testing
  * 
  * @section api API Integration
  * The dashboard communicates with the ESP32 backend through REST API endpoints:
  * - GET/POST /api/status - System status information
  * - GET/POST /api/wifi/* - WiFi management operations
  * - GET/POST /api/gsm/* - GSM operations and testing
+ * - GET/POST /api/email/* - Email configuration and testing
  * - GET/POST /api/load/save/user - User profile management
+ * - GET/POST /api/load/save/email - Email configuration management
  * 
  * @section design Design Features
  * - Clean, modern interface with professional styling
@@ -89,7 +93,7 @@ const char dashboard_html[] PROGMEM = R"rawliteral(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Configuration Panel</title>
+  <title>ESP32 IoT Configuration Panel</title>
   <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -228,6 +232,7 @@ body {
 .status-connected { color: #22d3ee; }
 .status-disconnected { color: #94a3b8; }
 .status-warning { color: #fbbf24; }
+.status-error { color: #ef4444; }
 .form-group { margin-bottom: 20px; }
 .form-group label { 
   display: block; 
@@ -242,7 +247,13 @@ body {
   gap: 12px; 
   align-items: end; 
 }
-input, select { 
+.input-with-button { 
+  display: grid; 
+  grid-template-columns: 1fr auto; 
+  gap: 12px; 
+  align-items: end; 
+}
+input, select, textarea { 
   width: 100%; 
   padding: 12px 16px; 
   border: 1px solid #475569; 
@@ -252,12 +263,12 @@ input, select {
   font-size: 0.875rem; 
   transition: all 0.2s ease; 
 }
-input:focus, select:focus { 
+input:focus, select:focus, textarea:focus { 
   outline: none; 
   border-color: #3b82f6; 
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); 
 }
-input:hover, select:hover { 
+input:hover, select:hover, textarea:hover { 
   border-color: #64748b; 
 }
 .network-dropdown { position: relative; }
@@ -374,7 +385,24 @@ button:disabled {
   background: #06b6d4; 
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); 
 }
+.btn-success { 
+  background: #10b981; 
+  color: #ffffff; 
+}
+.btn-success:hover:not(:disabled) { 
+  background: #059669; 
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); 
+}
+.btn-info { 
+  background: #0ea5e9; 
+  color: #ffffff; 
+}
+.btn-info:hover:not(:disabled) { 
+  background: #0284c7; 
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); 
+}
 .btn-full { flex: 1; }
+.btn-auto { width: auto; }
 .loading { 
   pointer-events: none; 
   opacity: 0.7; 
@@ -390,12 +418,60 @@ button:disabled {
   0% { transform: translateX(-100%); } 
   100% { transform: translateX(100%); } 
 }
+.message { 
+  padding: 12px 16px; 
+  border-radius: 6px; 
+  margin: 16px 0; 
+  font-size: 0.875rem; 
+}
+.message.success { 
+  background: rgba(16, 185, 129, 0.2); 
+  color: #10b981; 
+  border: 1px solid rgba(16, 185, 129, 0.3); 
+}
+.message.error { 
+  background: rgba(239, 68, 68, 0.2); 
+  color: #ef4444; 
+  border: 1px solid rgba(239, 68, 68, 0.3); 
+}
+.message.warning { 
+  background: rgba(245, 158, 11, 0.2); 
+  color: #f59e0b; 
+  border: 1px solid rgba(245, 158, 11, 0.3); 
+}
+.message.info { 
+  background: rgba(14, 165, 233, 0.2); 
+  color: #0ea5e9; 
+  border: 1px solid rgba(14, 165, 233, 0.3); 
+}
+.email-status { 
+  margin-top: 8px; 
+  font-size: 0.75rem; 
+  padding: 8px 12px; 
+  border-radius: 4px; 
+}
+.email-status.success { 
+  background: rgba(16, 185, 129, 0.2); 
+  color: #10b981; 
+  border: 1px solid rgba(16, 185, 129, 0.3); 
+}
+.email-status.error { 
+  background: rgba(239, 68, 68, 0.2); 
+  color: #ef4444; 
+  border: 1px solid rgba(239, 68, 68, 0.3); 
+}
+.email-status.info { 
+  background: rgba(14, 165, 233, 0.2); 
+  color: #0ea5e9; 
+  border: 1px solid rgba(14, 165, 233, 0.3); 
+}
 @media (max-width: 768px) {
   .container { padding: 20px; }
   .content-grid { grid-template-columns: 1fr; }
   .tabs { flex-direction: column; }
   .button-row { flex-direction: column; }
   .input-row { grid-template-columns: 1fr; }
+  .input-with-button { grid-template-columns: 1fr; }
 }
   </style>
 </head>
@@ -410,8 +486,8 @@ button:disabled {
     </div>
 
     <div class="header">
-      <h1>Configuration Panel</h1>
-      <p>Advanced IoT Monitoring & Configuration System</p>
+      <h1>ESP32 IoT Configuration Panel</h1>
+      <p>Advanced IoT Monitoring & Configuration System v2.2.0</p>
     </div>
 
     <!-- Tabs -->
@@ -419,41 +495,42 @@ button:disabled {
       <button class="tab-btn active" onclick="showTab('user')">User Management</button>
       <button class="tab-btn" onclick="showTab('wifi')" id="wifiTabBtn">WiFi Configuration</button>
       <button class="tab-btn" onclick="showTab('gsm')" id="gsmTabBtn">GSM Settings</button>
+      <button class="tab-btn" onclick="showTab('email')" id="emailTabBtn">Email Settings</button>
     </div>
 
     <!-- User Tab -->
     <div id="user" class="tab-content active">
       <div class="content-grid">
         <div class="card">
-          <h3>System Information</h3>
+          <h3>📊 System Information</h3>
           <div class="status-row">
             <span class="status-label">Device Model</span>
             <span class="status-value">ESP32 DevKit</span>
           </div>
           <div class="status-row">
             <span class="status-label">Firmware Version</span>
-            <span class="status-value">v2.1.0</span>
+            <span class="status-value">v2.2.0</span>
           </div>
           <div class="status-row">
             <span class="status-label">Last Updated</span>
-            <span class="status-value">2025-08-30</span>
+            <span class="status-value">2025-01-30</span>
           </div>
-           <div class="status-row">
-             <span class="status-label">Saved User Name</span>
-             <span class="status-value" id="savedUserName">—</span>
-           </div>
-           <div class="status-row">
-             <span class="status-label">Saved User Email</span>
-             <span class="status-value" id="savedUserEmail">—</span>
-           </div>
-           <div class="status-row">
-             <span class="status-label">Saved User Phone</span>
-             <span class="status-value" id="savedUserPhone">—</span>
-           </div>
+          <div class="status-row">
+            <span class="status-label">Saved User Name</span>
+            <span class="status-value" id="savedUserName">—</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Saved User Email</span>
+            <span class="status-value" id="savedUserEmail">—</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Saved User Phone</span>
+            <span class="status-value" id="savedUserPhone">—</span>
+          </div>
         </div>
 
         <div class="card">
-          <h3>User Profile</h3>
+          <h3>👤 User Profile</h3>
 
           <div class="form-group">
             <label for="userName">Full Name</label>
@@ -462,7 +539,11 @@ button:disabled {
 
           <div class="form-group">
             <label for="userEmail">Email Address</label>
-            <input type="email" id="userEmail" placeholder="your.email@example.com">
+            <div class="input-with-button">
+              <input type="email" id="userEmail" placeholder="your.email@example.com">
+              <button class="btn-info btn-auto" onclick="checkEmail()" id="checkEmailBtn">Check Email</button>
+            </div>
+            <div id="emailStatus" class="email-status" style="display: none;"></div>
           </div>
 
           <div class="form-group">
@@ -472,8 +553,8 @@ button:disabled {
 
           <div class="button-group">
             <div class="button-row">
-              <button class="btn-primary btn-full">Save Profile</button>
-              <button class="btn-danger btn-full">Clear Form</button>
+              <button class="btn-primary btn-full" onclick="saveUser()">Save Profile</button>
+              <button class="btn-danger btn-full" onclick="clearUserForm()">Clear Form</button>
             </div>
           </div>
         </div>
@@ -484,7 +565,7 @@ button:disabled {
     <div id="wifi" class="tab-content">
       <div class="content-grid">
         <div class="card">
-          <h3>Network Status</h3>
+          <h3>📡 Network Status</h3>
           <div class="status-row">
             <span class="status-label">Access Point IP</span>
             <span class="status-value" id="apAddress">192.168.4.1</span>
@@ -512,7 +593,7 @@ button:disabled {
         </div>
 
         <div class="card">
-          <h3>WiFi Configuration</h3>
+          <h3>🔧 WiFi Configuration</h3>
           <div class="input-row" style="margin-bottom: 24px;">
             <button class="btn-scan btn-full" onclick="scanWifi()" id="scanButton">Scan Networks</button>
           </div>
@@ -549,10 +630,10 @@ button:disabled {
     <div id="gsm" class="tab-content">
       <div class="content-grid">
         <div class="card">
-          <h3>GSM Status</h3>
+          <h3>📶 GSM Status</h3>
           <div class="status-row">
             <span class="status-label">Connection Status</span>
-            <span class="status-value status-connected">Active</span>
+            <span class="status-value" id="gsmConnectionStatus">—</span>
           </div>
           <div class="status-row">
             <span class="status-label">Signal Strength</span>
@@ -573,7 +654,7 @@ button:disabled {
         </div>
 
         <div class="card">
-          <h3>GSM Testing</h3>
+          <h3>🧪 GSM Testing</h3>
           <div class="form-group">
             <label for="testPhoneNumber">Test Phone Number</label>
             <input type="text" id="testPhoneNumber" placeholder="Enter phone number for testing (e.g., +94719792341)">
@@ -589,6 +670,102 @@ button:disabled {
               <button class="btn-secondary btn-full" onclick="refreshGSMStatus()" id="refreshGSMBtn">Refresh GSM Status</button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Email Tab -->
+    <div id="email" class="tab-content">
+      <div class="content-grid">
+        <div class="card">
+          <h3>📧 Email Configuration</h3>
+          <div class="status-row">
+            <span class="status-label">Email Status</span>
+            <span class="status-value" id="emailConfigStatus">Not configured</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">SMTP Server</span>
+            <span class="status-value" id="smtpServer">—</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Email Account</span>
+            <span class="status-value" id="emailAccount">—</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Last Test</span>
+            <span class="status-value" id="lastEmailTest">Never</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>⚙️ SMTP Settings</h3>
+          <div class="form-group">
+            <label for="smtpHost">SMTP Host</label>
+            <input type="text" id="smtpHost" placeholder="smtp.gmail.com" value="smtp.gmail.com">
+          </div>
+
+          <div class="form-group">
+            <label for="smtpPort">SMTP Port</label>
+            <input type="number" id="smtpPort" placeholder="465" value="465">
+          </div>
+
+          <div class="form-group">
+            <label for="emailAccountInput">Email Address</label>
+            <input type="email" id="emailAccountInput" placeholder="your.email@gmail.com">
+          </div>
+
+          <div class="form-group">
+            <label for="emailPassword">App Password</label>
+            <div class="password-input">
+              <input type="password" id="emailPassword" placeholder="Gmail app password">
+              <button type="button" class="password-toggle" onclick="toggleEmailPassword()">👁</button>
+            </div>
+            <small style="color: #94a3b8; font-size: 0.75rem; margin-top: 4px; display: block;">
+              For Gmail, use an App Password (not your regular password)
+            </small>
+          </div>
+
+          <div class="form-group">
+            <label for="senderName">Sender Name</label>
+            <input type="text" id="senderName" placeholder="ESP32 Dashboard" value="ESP32 Dashboard">
+          </div>
+
+          <div class="button-group">
+            <div class="button-row">
+              <button class="btn-primary btn-full" onclick="saveEmailConfig()">Save Email Settings</button>
+              <button class="btn-danger btn-full" onclick="clearEmailForm()">Clear Form</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>🧪 Email Testing</h3>
+          <div class="form-group">
+            <label for="testRecipientEmail">Recipient Email</label>
+            <input type="email" id="testRecipientEmail" placeholder="recipient@example.com">
+          </div>
+
+          <div class="form-group">
+            <label for="testEmailSubject">Subject</label>
+            <input type="text" id="testEmailSubject" placeholder="Test Email from ESP32" value="Test Email from ESP32 Dashboard">
+          </div>
+
+          <div class="form-group">
+            <label for="testEmailContent">Message Content</label>
+            <textarea id="testEmailContent" rows="4" placeholder="Enter your test message here...">This is a test email sent from your ESP32 IoT Configuration Panel.</textarea>
+          </div>
+
+          <div class="button-group">
+            <div class="button-row">
+              <button class="btn-success btn-full" onclick="sendTestEmail()" id="sendTestEmailBtn">Send Test Email</button>
+              <button class="btn-secondary btn-full" onclick="sendQuickTest()" id="quickTestBtn">Quick Test</button>
+            </div>
+            <div class="button-row">
+              <button class="btn-info btn-full" onclick="checkEmailConfiguration()" id="checkConfigBtn">Check Configuration</button>
+            </div>
+          </div>
+          
+          <div id="emailTestResult" class="message" style="display: none;"></div>
         </div>
       </div>
     </div>
@@ -617,6 +794,7 @@ async function apiGet(url) {
     throw error;
   }
 }
+
 async function apiPost(url, bodyObj) {
   try {
     const r = await fetch(url, { 
@@ -637,10 +815,28 @@ async function apiPost(url, bodyObj) {
     throw error;
   }
 }
+
 function strengthFromRSSI(rssi) {
   if (rssi >= -60) return 'strong';
   if (rssi >= -75) return 'medium';
   return 'weak';
+}
+
+function showMessage(elementId, message, type = 'success') {
+  const element = document.getElementById(elementId);
+  element.textContent = message;
+  element.className = `message ${type}`;
+  element.style.display = 'block';
+  setTimeout(() => {
+    element.style.display = 'none';
+  }, 5000);
+}
+
+function showEmailStatus(message, type = 'info') {
+  const element = document.getElementById('emailStatus');
+  element.textContent = message;
+  element.className = `email-status ${type}`;
+  element.style.display = 'block';
 }
 
 // ---------- Mode Toggle ----------
@@ -654,10 +850,12 @@ function switchMode(mode) {
   // Show/hide tabs based on mode
   const wifiTabBtn = document.getElementById('wifiTabBtn');
   const gsmTabBtn = document.getElementById('gsmTabBtn');
+  const emailTabBtn = document.getElementById('emailTabBtn');
   
   if (mode === 'wifi') {
     wifiTabBtn.classList.remove('hidden');
     gsmTabBtn.classList.add('hidden');
+    emailTabBtn.classList.remove('hidden');
     // Switch to WiFi tab if GSM was active
     if (document.getElementById('gsm').classList.contains('active')) {
       showTab('wifi');
@@ -665,6 +863,7 @@ function switchMode(mode) {
   } else if (mode === 'gsm') {
     wifiTabBtn.classList.add('hidden');
     gsmTabBtn.classList.remove('hidden');
+    emailTabBtn.classList.remove('hidden');
     // Switch to GSM tab if WiFi was active
     if (document.getElementById('wifi').classList.contains('active')) {
       showTab('gsm');
@@ -683,15 +882,33 @@ function showTab(tabId) {
   document.getElementById(tabId).classList.add("active");
   event.target.classList.add("active");
 
-  if (tabId === 'gsm') startGsmPoll(); else stopGsmPoll();
+  if (tabId === 'gsm') startGsmPoll(); 
+  else stopGsmPoll();
 }
 
 // ---------- Password toggle ----------
 function togglePassword() {
   const passField = document.getElementById("wifiPass");
   const toggleBtn = document.querySelector(".password-toggle");
-  if (passField.type === "password") { passField.type = "text"; toggleBtn.textContent = "👁"; }
-  else { passField.type = "password"; toggleBtn.textContent = "👁"; }
+  if (passField.type === "password") { 
+    passField.type = "text"; 
+    toggleBtn.textContent = "🙈"; 
+  } else { 
+    passField.type = "password"; 
+    toggleBtn.textContent = "👁"; 
+  }
+}
+
+function toggleEmailPassword() {
+  const passField = document.getElementById("emailPassword");
+  const toggleBtn = document.querySelectorAll(".password-toggle")[1];
+  if (passField.type === "password") { 
+    passField.type = "text"; 
+    toggleBtn.textContent = "🙈"; 
+  } else { 
+    passField.type = "password"; 
+    toggleBtn.textContent = "👁"; 
+  }
 }
 
 // ---------- Status ----------
@@ -709,21 +926,48 @@ async function refreshStatus() {
     const staSSID = st.sta?.ssid || '';
     const staAddressEl = document.getElementById('staAddress');
     if (staConnected && staIP !== '0.0.0.0') {
-      staAddressEl.textContent = staIP; staAddressEl.className = 'status-value status-connected';
-    } else { staAddressEl.textContent = 'Not connected'; staAddressEl.className = 'status-value status-disconnected'; }
+      staAddressEl.textContent = staIP; 
+      staAddressEl.className = 'status-value status-connected';
+    } else { 
+      staAddressEl.textContent = 'Not connected'; 
+      staAddressEl.className = 'status-value status-disconnected'; 
+    }
     const connectedNetworkEl = document.getElementById('connectedNetwork');
-    if (staConnected && staSSID) { connectedNetworkEl.textContent = staSSID; connectedNetworkEl.className = 'status-value status-connected'; }
-    else { connectedNetworkEl.textContent = 'None'; connectedNetworkEl.className = 'status-value status-disconnected'; }
+    if (staConnected && staSSID) { 
+      connectedNetworkEl.textContent = staSSID; 
+      connectedNetworkEl.className = 'status-value status-connected'; 
+    } else { 
+      connectedNetworkEl.textContent = 'None'; 
+      connectedNetworkEl.className = 'status-value status-disconnected'; 
+    }
     const internetStatusEl = document.getElementById('internetStatus');
-    if (staConnected) { internetStatusEl.textContent = 'Connected'; internetStatusEl.className = 'status-value status-connected'; }
-    else { internetStatusEl.textContent = 'Not connected'; internetStatusEl.className = 'status-value status-disconnected'; }
+    if (staConnected) { 
+      internetStatusEl.textContent = 'Connected'; 
+      internetStatusEl.className = 'status-value status-connected'; 
+    } else { 
+      internetStatusEl.textContent = 'Not connected'; 
+      internetStatusEl.className = 'status-value status-disconnected'; 
+    }
+    
+    // Email status
+    const emailConfigured = st.email?.configured || false;
+    const emailConfigStatusEl = document.getElementById('emailConfigStatus');
+    if (emailConfigured) {
+      emailConfigStatusEl.textContent = 'Configured';
+      emailConfigStatusEl.className = 'status-value status-connected';
+    } else {
+      emailConfigStatusEl.textContent = 'Not configured';
+      emailConfigStatusEl.className = 'status-value status-disconnected';
+    }
   } catch (e) {
+    console.error('Status refresh error:', e);
     document.getElementById('apAddress').textContent = 'Error';
     document.getElementById('apSSID').textContent = 'Error';
     document.getElementById('connectedDevices').textContent = 'Error';
     document.getElementById('staAddress').textContent = 'Error';
     document.getElementById('connectedNetwork').textContent = 'Error';
     document.getElementById('internetStatus').textContent = 'Error';
+    document.getElementById('emailConfigStatus').textContent = 'Error';
   }
 }
 
@@ -735,9 +979,14 @@ async function scanWifi() {
   const wifiPass = document.getElementById('wifiPass');
   const connectBtn = document.getElementById('connectBtn');
 
-  button.classList.add('loading'); button.textContent = 'Scanning...'; button.disabled = true;
-  networkSelect.disabled = true; wifiPass.disabled = true; connectBtn.disabled = true;
-  wifiPass.value = ''; signalIndicator.style.display = 'none';
+  button.classList.add('loading'); 
+  button.textContent = 'Scanning...'; 
+  button.disabled = true;
+  networkSelect.disabled = true; 
+  wifiPass.disabled = true; 
+  connectBtn.disabled = true;
+  wifiPass.value = ''; 
+  signalIndicator.style.display = 'none';
   networkSelect.innerHTML = '<option value="">Scanning for networks...</option>';
 
   try {
@@ -777,7 +1026,9 @@ async function scanWifi() {
     networkSelect.innerHTML = '<option value="">Scan failed - try again</option>';
   } finally {
     networkSelect.disabled = false;
-    button.classList.remove('loading'); button.textContent = 'Scan Networks'; button.disabled = false;
+    button.classList.remove('loading'); 
+    button.textContent = 'Scan Networks'; 
+    button.disabled = false;
   }
 }
 
@@ -800,7 +1051,8 @@ function selectNetwork() {
   } else {
     selectedNetworkData = null;
     signalIndicator.style.display = 'none';
-    wifiPass.disabled = true; wifiPass.value = '';
+    wifiPass.disabled = true; 
+    wifiPass.value = '';
     connectBtn.disabled = true;
   }
 }
@@ -808,13 +1060,25 @@ function selectNetwork() {
 async function connectNetwork() {
   const wifiPass = document.getElementById('wifiPass');
   const connectBtn = document.getElementById('connectBtn');
-  if (!selectedNetworkData) { alert('Please select a network'); return; }
-  if ((selectedNetworkData.security !== 'Open') && !wifiPass.value.trim()) { alert('Please enter the network password'); wifiPass.focus(); return; }
+  if (!selectedNetworkData) { 
+    alert('Please select a network'); 
+    return; 
+  }
+  if ((selectedNetworkData.security !== 'Open') && !wifiPass.value.trim()) { 
+    alert('Please enter the network password'); 
+    wifiPass.focus(); 
+    return; 
+  }
 
-  connectBtn.classList.add('loading'); connectBtn.textContent = 'Connecting...'; connectBtn.disabled = true;
+  connectBtn.classList.add('loading'); 
+  connectBtn.textContent = 'Connecting...'; 
+  connectBtn.disabled = true;
   
   try {
-    const resp = await apiPost('/api/wifi/connect', { ssid: selectedNetworkData.ssid, password: wifiPass.value });
+    const resp = await apiPost('/api/wifi/connect', { 
+      ssid: selectedNetworkData.ssid, 
+      password: wifiPass.value 
+    });
     
     if (resp.success) {
       alert(`Successfully connected to ${resp.ssid}\nIP Address: ${resp.ip}\nSignal Strength: ${resp.rssi} dBm`);
@@ -830,7 +1094,9 @@ async function connectNetwork() {
   } catch(e) {
     alert('Connect failed: ' + e.message);
   } finally {
-    connectBtn.classList.remove('loading'); connectBtn.textContent = 'Connect Network'; connectBtn.disabled = false;
+    connectBtn.classList.remove('loading'); 
+    connectBtn.textContent = 'Connect Network'; 
+    connectBtn.disabled = false;
     await refreshStatus();
   }
 }
@@ -838,14 +1104,18 @@ async function connectNetwork() {
 async function disconnectNetwork() {
   if (!confirm('Disconnect from current WiFi network?')) return;
   const disconnectBtn = document.getElementById('disconnectBtn');
-  disconnectBtn.classList.add('loading'); disconnectBtn.textContent = 'Disconnecting...'; disconnectBtn.disabled = true;
+  disconnectBtn.classList.add('loading'); 
+  disconnectBtn.textContent = 'Disconnecting...'; 
+  disconnectBtn.disabled = true;
   try {
     await apiPost('/api/wifi/disconnect', {});
     alert('Disconnected from WiFi network.');
   } catch (e) {
     alert('Disconnect failed: ' + e.message);
   } finally {
-    disconnectBtn.classList.remove('loading'); disconnectBtn.textContent = 'Disconnect'; disconnectBtn.disabled = false;
+    disconnectBtn.classList.remove('loading'); 
+    disconnectBtn.textContent = 'Disconnect'; 
+    disconnectBtn.disabled = false;
     await refreshStatus();
     document.getElementById('networkSelect').value = '';
     document.getElementById('wifiPass').value = '';
@@ -855,18 +1125,11 @@ async function disconnectNetwork() {
   }
 }
 
-// ---------- GSM save/load ----------
-async function loadGsm() {
-  try {
-    const d = await apiGet('/api/load/gsm');
-    // GSM configuration is now handled automatically
-  } catch (e) { console.warn('GSM load failed', e); }
-}
-
+// ---------- GSM Functions ----------
 function startGsmPoll() { 
   stopGsmPoll(); 
   fetchSignalStrength(); 
-  gsmPoll = setInterval(fetchSignalStrength, 30000); // Reduced to 30 seconds instead of 5 seconds
+  gsmPoll = setInterval(fetchSignalStrength, 30000);
 }
 
 function stopGsmPoll() { 
@@ -876,7 +1139,6 @@ function stopGsmPoll() {
   } 
 }
 
-// ---------- GSM Testing Functions ----------
 async function fetchSignalStrength(forceRefresh = false) {
   try {
     const url = forceRefresh ? '/api/gsm/signal?force=true' : '/api/gsm/signal';
@@ -889,6 +1151,16 @@ async function fetchSignalStrength(forceRefresh = false) {
     
     document.getElementById('signalStrength').textContent = signalDb + ' dBm';
     
+    // Update GSM connection status
+    const gsmStatusEl = document.getElementById('gsmConnectionStatus');
+    if (signalDb !== -999) {
+      gsmStatusEl.textContent = 'Active';
+      gsmStatusEl.className = 'status-value status-connected';
+    } else {
+      gsmStatusEl.textContent = 'Inactive';
+      gsmStatusEl.className = 'status-value status-disconnected';
+    }
+    
     // Show cache status
     if (isForceRefresh) {
       document.getElementById('signalStrength').textContent += ' (Fresh data)';
@@ -900,6 +1172,8 @@ async function fetchSignalStrength(forceRefresh = false) {
     }
   } catch (e) {
     document.getElementById('signalStrength').textContent = '— dBm';
+    document.getElementById('gsmConnectionStatus').textContent = 'Error';
+    document.getElementById('gsmConnectionStatus').className = 'status-value status-error';
     console.warn('Signal strength error', e);
   }
 }
@@ -997,7 +1271,6 @@ async function testCall() {
   }
 }
 
-
 async function refreshGSMStatus() {
   const btn = document.getElementById('refreshGSMBtn');
   btn.classList.add('loading');
@@ -1006,8 +1279,8 @@ async function refreshGSMStatus() {
   
   try {
     // Force refresh both signal and network data
-    await fetchSignalStrength(true);  // Force refresh signal
-    await detectNetwork(true);        // Force refresh network info
+    await fetchSignalStrength(true);
+    await detectNetwork(true);
   } catch (e) {
     console.warn('GSM refresh error', e);
   } finally {
@@ -1017,22 +1290,229 @@ async function refreshGSMStatus() {
   }
 }
 
-// ---------- USER save/load ----------
- async function loadUser() {
-   try {
-     const d = await apiGet('/api/load/user');
-     document.getElementById('userName').value   = d.name  || '';
-     document.getElementById('userEmail').value  = d.email || '';
-     document.getElementById('userContact').value= d.phone || '';
-     
-     // Update saved user data display
-     document.getElementById('savedUserName').textContent = d.name || '—';
-     document.getElementById('savedUserEmail').textContent = d.email || '—';
-     document.getElementById('savedUserPhone').textContent = d.phone || '—';
-     
-     // Don't auto-populate test phone number - let user enter it manually
-   } catch (e) { console.warn('User load failed', e); }
- }
+// ---------- Email Functions ----------
+async function loadEmailConfig() {
+  try {
+    const d = await apiGet('/api/load/email');
+    document.getElementById('smtpHost').value = d.smtpHost || 'smtp.gmail.com';
+    document.getElementById('smtpPort').value = d.smtpPort || 465;
+    document.getElementById('emailAccountInput').value = d.emailAccount || '';
+    document.getElementById('senderName').value = d.senderName || 'ESP32 Dashboard';
+    // Note: Password is not returned for security
+    
+    // Update status display
+    if (d.emailAccount) {
+      document.getElementById('smtpServer').textContent = d.smtpHost || '—';
+      document.getElementById('emailAccount').textContent = d.emailAccount || '—';
+    }
+  } catch (e) { 
+    console.warn('Email config load failed', e); 
+  }
+}
+
+async function saveEmailConfig() {
+  const btn = event.target;
+  btn.classList.add('loading');
+  btn.textContent = 'Saving...';
+  btn.disabled = true;
+  
+  try {
+    const config = {
+      smtpHost: document.getElementById('smtpHost').value,
+      smtpPort: parseInt(document.getElementById('smtpPort').value),
+      emailAccount: document.getElementById('emailAccountInput').value,
+      emailPassword: document.getElementById('emailPassword').value,
+      senderName: document.getElementById('senderName').value
+    };
+    
+    if (!config.smtpHost || !config.emailAccount || !config.emailPassword) {
+      alert('Please fill in all required fields: SMTP Host, Email Account, and App Password');
+      return;
+    }
+    
+    const result = await apiPost('/api/save/email', config);
+    
+    if (result.success) {
+      showMessage('emailTestResult', 'Email configuration saved successfully!', 'success');
+      // Update status display
+      document.getElementById('smtpServer').textContent = config.smtpHost;
+      document.getElementById('emailAccount').textContent = config.emailAccount;
+      document.getElementById('emailConfigStatus').textContent = 'Configured';
+      document.getElementById('emailConfigStatus').className = 'status-value status-connected';
+    } else {
+      showMessage('emailTestResult', 'Failed to save email configuration: ' + (result.message || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    showMessage('emailTestResult', 'Save failed: ' + e.message, 'error');
+  } finally {
+    btn.classList.remove('loading');
+    btn.textContent = 'Save Email Settings';
+    btn.disabled = false;
+  }
+}
+
+async function sendTestEmail() {
+  const btn = document.getElementById('sendTestEmailBtn');
+  const recipient = document.getElementById('testRecipientEmail').value;
+  const subject = document.getElementById('testEmailSubject').value;
+  const content = document.getElementById('testEmailContent').value;
+  
+  if (!recipient) {
+    alert('Please enter a recipient email address');
+    return;
+  }
+  
+  btn.classList.add('loading');
+  btn.textContent = 'Sending...';
+  btn.disabled = true;
+  
+  try {
+    const result = await apiPost('/api/email/send', {
+      to: recipient,
+      subject: subject,
+      content: content
+    });
+    
+    if (result.success) {
+      showMessage('emailTestResult', 'Test email sent successfully!', 'success');
+      document.getElementById('lastEmailTest').textContent = new Date().toLocaleString();
+    } else {
+      showMessage('emailTestResult', 'Email sending failed: ' + (result.error || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    showMessage('emailTestResult', 'Email test failed: ' + e.message, 'error');
+  } finally {
+    btn.classList.remove('loading');
+    btn.textContent = 'Send Test Email';
+    btn.disabled = false;
+  }
+}
+
+async function sendQuickTest() {
+  const recipient = document.getElementById('testRecipientEmail').value;
+  if (!recipient) {
+    alert('Please enter a recipient email address for quick test');
+    return;
+  }
+  
+  // Use the legacy endpoint for quick testing
+  try {
+    const response = await fetch(`/sendDummyEmail?to=${encodeURIComponent(recipient)}`);
+    const result = await response.json();
+    showMessage('emailTestResult', result.message, result.message.includes('✅') ? 'success' : 'error');
+    if (result.message.includes('✅')) {
+      document.getElementById('lastEmailTest').textContent = new Date().toLocaleString();
+    }
+  } catch (e) {
+    showMessage('emailTestResult', 'Quick test failed: ' + e.message, 'error');
+  }
+}
+
+async function checkEmailConfiguration() {
+  const btn = document.getElementById('checkConfigBtn');
+  btn.classList.add('loading');
+  btn.textContent = 'Checking...';
+  btn.disabled = true;
+  
+  try {
+    const config = {
+      smtpHost: document.getElementById('smtpHost').value,
+      smtpPort: parseInt(document.getElementById('smtpPort').value),
+      emailAccount: document.getElementById('emailAccountInput').value,
+      emailPassword: document.getElementById('emailPassword').value
+    };
+    
+    if (!config.smtpHost || !config.emailAccount || !config.emailPassword) {
+      showMessage('emailTestResult', 'Please fill in all required email configuration fields', 'warning');
+      return;
+    }
+    
+    // Test the configuration by attempting to send a test email
+    const testRecipient = config.emailAccount; // Send to self for testing
+    const result = await apiPost('/api/email/send', {
+      to: testRecipient,
+      subject: 'Email Configuration Test',
+      content: 'This is a test email to verify your SMTP configuration. If you receive this, your email settings are correct!'
+    });
+    
+    if (result.success) {
+      showMessage('emailTestResult', 'Email configuration test passed! Configuration is working correctly.', 'success');
+      document.getElementById('lastEmailTest').textContent = new Date().toLocaleString();
+    } else {
+      showMessage('emailTestResult', 'Email configuration test failed: ' + (result.error || 'Unknown error. Check your SMTP settings and credentials.'), 'error');
+    }
+  } catch (e) {
+    showMessage('emailTestResult', 'Configuration check failed: ' + e.message, 'error');
+  } finally {
+    btn.classList.remove('loading');
+    btn.textContent = 'Check Configuration';
+    btn.disabled = false;
+  }
+}
+
+async function checkEmail() {
+  const email = document.getElementById('userEmail').value;
+  const btn = document.getElementById('checkEmailBtn');
+  
+  if (!email) {
+    showEmailStatus('Please enter an email address first', 'error');
+    return;
+  }
+  
+  // Basic email validation
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    showEmailStatus('Please enter a valid email address', 'error');
+    return;
+  }
+  
+  btn.classList.add('loading');
+  btn.textContent = 'Checking...';
+  btn.disabled = true;
+  
+  try {
+    // Use the quick test endpoint to check if email can be sent
+    const response = await fetch(`/sendDummyEmail?to=${encodeURIComponent(email)}`);
+    const result = await response.json();
+    
+    if (result.message.includes('✅') || result.message.includes('successfully')) {
+      showEmailStatus('Email configuration is working! Test email sent successfully.', 'success');
+    } else {
+      showEmailStatus('Email test failed: ' + result.message, 'error');
+    }
+  } catch (e) {
+    showEmailStatus('Email check failed: ' + e.message, 'error');
+  } finally {
+    btn.classList.remove('loading');
+    btn.textContent = 'Check Email';
+    btn.disabled = false;
+  }
+}
+
+function clearEmailForm() {
+  document.getElementById('emailPassword').value = '';
+  document.getElementById('testRecipientEmail').value = '';
+  document.getElementById('testEmailSubject').value = 'Test Email from ESP32 Dashboard';
+  document.getElementById('testEmailContent').value = 'This is a test email sent from your ESP32 IoT Configuration Panel.';
+  document.getElementById('emailTestResult').style.display = 'none';
+}
+
+// ---------- User Functions ----------
+async function loadUser() {
+  try {
+    const d = await apiGet('/api/load/user');
+    document.getElementById('userName').value   = d.name  || '';
+    document.getElementById('userEmail').value  = d.email || '';
+    document.getElementById('userContact').value= d.phone || '';
+    
+    // Update saved user data display
+    document.getElementById('savedUserName').textContent = d.name || '—';
+    document.getElementById('savedUserEmail').textContent = d.email || '—';
+    document.getElementById('savedUserPhone').textContent = d.phone || '—';
+  } catch (e) { 
+    console.warn('User load failed', e); 
+  }
+}
 
 async function saveUser() {
   try {
@@ -1051,42 +1531,44 @@ async function saveUser() {
     document.getElementById('savedUserEmail').textContent = email || '—';
     document.getElementById('savedUserPhone').textContent = phone || '—';
     
-    // Don't auto-populate test phone number - let user enter it manually
-    
-    alert('Profile saved.');
-  } catch (e) { alert('Save failed: ' + e.message); }
+    alert('Profile saved successfully!');
+  } catch (e) { 
+    alert('Save failed: ' + e.message); 
+  }
 }
 
-// ---------- Wire up ----------
+function clearUserForm() {
+  document.getElementById('userName').value = '';
+  document.getElementById('userEmail').value = '';
+  document.getElementById('userContact').value = '';
+  document.getElementById('emailStatus').style.display = 'none';
+}
+
+// ---------- Initialize ----------
 document.addEventListener('DOMContentLoaded', function() {
   console.log('Dashboard loaded');
 
-  // Expose
+  // Expose functions to global scope
   window.scanWifi = scanWifi;
   window.selectNetwork = selectNetwork;
   window.connectNetwork = connectNetwork;
   window.disconnectNetwork = disconnectNetwork;
   window.togglePassword = togglePassword;
+  window.toggleEmailPassword = toggleEmailPassword;
   window.switchMode = switchMode;
   window.showTab = showTab;
   window.testSMS = testSMS;
   window.testCall = testCall;
   window.detectNetwork = detectNetwork;
   window.refreshGSMStatus = refreshGSMStatus;
-
-  // GSM testing functions are now handled by onclick attributes
-
-  // USER buttons
-  const userCard = document.querySelector('#user .card:nth-child(2)'); // Updated to second card after reordering
-  if (userCard) {
-    const [saveBtn, clearBtn] = userCard.querySelectorAll('.button-row button');
-    if (saveBtn)  saveBtn.addEventListener('click', saveUser);
-     if (clearBtn) clearBtn.addEventListener('click', () => {
-       document.getElementById('userName').value='';
-       document.getElementById('userEmail').value='';
-       document.getElementById('userContact').value='';
-     });
-  }
+  window.saveUser = saveUser;
+  window.clearUserForm = clearUserForm;
+  window.saveEmailConfig = saveEmailConfig;
+  window.sendTestEmail = sendTestEmail;
+  window.sendQuickTest = sendQuickTest;
+  window.checkEmailConfiguration = checkEmailConfiguration;
+  window.checkEmail = checkEmail;
+  window.clearEmailForm = clearEmailForm;
 
   // Initialize mode toggle
   switchMode('wifi'); // Start in WiFi mode
@@ -1095,14 +1577,14 @@ document.addEventListener('DOMContentLoaded', function() {
   refreshStatus();
   loadGsm();
   loadUser();
+  loadEmailConfig();
 
-  // Refresh WiFi status every 10s
+  // Refresh status every 10s
   setInterval(refreshStatus, 10000);
 });
   </script>
 </body>
 </html>
-
 )rawliteral";
 
 /**
@@ -1115,4 +1597,3 @@ document.addEventListener('DOMContentLoaded', function() {
 const size_t dashboard_html_len = sizeof(dashboard_html) - 1;
 
 #endif // DASHBOARD_HTML_H
-

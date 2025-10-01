@@ -1,20 +1,21 @@
 /**
  * @file main.cpp
- * @brief ESP32 IoT Configuration Panel with GSM/LTE Integration
+ * @brief ESP32 IoT Configuration Panel with GSM/LTE and Email Integration
  * @author IoT Device Dashboard Project
- * @version 2.1.0
+ * @version 2.2.0
  * @date 2025-01-30
  * 
  * Main application for ESP32-based IoT monitoring and configuration system.
  * Features:
  * - Dual-mode WiFi (Access Point + Station)
  * - GSM/LTE modem integration via SIMCom A76xx modules
+ * - Email notification system with Gmail SMTP
  * - Web-based configuration dashboard with captive portal
  * - Real-time status monitoring and device management
  * - JSON-based configuration persistence
  * 
  * Hardware Requirements:
- * - IIoT dev modeule
+ * - IIoT dev module
  * - Wiring: ESP32 RX2 (GPIO 16) -> Modem TX, ESP32 TX2 (GPIO 17) -> Modem RX
  * 
  * Network Configuration:
@@ -26,8 +27,10 @@
  * - GET/POST /api/status - System status information
  * - GET/POST /api/wifi/* - WiFi management (scan, connect, disconnect)
  * - GET/POST /api/gsm/* - GSM operations (signal, network, SMS, calls)
+ * - GET/POST /api/email/* - Email operations (send test emails)
  * - GET/POST /api/load/save/user - User profile management
  * - GET/POST /api/load/save/gsm - GSM configuration management
+ * - GET/POST /api/load/save/email - Email configuration management
  */
 
 // Standard ESP32 libraries
@@ -36,6 +39,8 @@
 #include <DNSServer.h>   // DNS server for captive portal functionality
 #include <SPIFFS.h>      // File system for configuration storage
 #include <ArduinoJson.h> // JSON parsing and generation
+
+#include <ESP_Mail_Client.h> // Email sending library
 
 // Custom GSM library for SIMCom A76xx modules
 #include "GSM_Test.h"
@@ -61,6 +66,12 @@ DNSServer dnsServer;
  */
 WebServer server(80);
 
+/**
+ * @brief SMTP email client instance
+ * Handles email sending via Gmail SMTP server
+ */
+SMTPSession smtp;
+
 // ============================================================================
 // CONFIGURATION CONSTANTS
 // ============================================================================
@@ -73,12 +84,21 @@ static const char* DEFAULT_AP_SSID = "ESP32-AccessPoint";  // Default AP name
 static const char* DEFAULT_AP_PASS = "12345678";           // Default AP password (>= 8 chars)
 
 /**
+ * @brief Default Email configuration
+ * These values are used when no custom email configuration is saved
+ */
+static const char* DEFAULT_SMTP_HOST = "smtp.gmail.com";   // Default SMTP server
+static const int DEFAULT_SMTP_PORT = 465;                  // Default SMTP port (SSL)
+static const char* DEFAULT_SENDER_NAME = "ESP32 Dashboard"; // Default sender name
+
+/**
  * @brief Configuration file paths in SPIFFS
  * All configuration data is stored as JSON files in the SPIFFS filesystem
  */
-static const char* WIFI_FILE = "/wifi.json";  // WiFi configuration (AP and Station settings)
-static const char* GSM_FILE  = "/gsm.json";   // GSM modem configuration (APN, carrier settings)
-static const char* USER_FILE = "/user.json";  // User profile data (name, email, phone)
+static const char* WIFI_FILE = "/wifi.json";   // WiFi configuration (AP and Station settings)
+static const char* GSM_FILE  = "/gsm.json";    // GSM modem configuration (APN, carrier settings)
+static const char* USER_FILE = "/user.json";   // User profile data (name, email, phone)
+static const char* EMAIL_FILE = "/email.json"; // Email configuration (SMTP settings)
 
 // ============================================================================
 // HARDWARE CONFIGURATION
@@ -430,6 +450,81 @@ struct UserConfig {
   }
 } userCfg;
 
+/**
+ * @brief Email configuration management structure
+ * 
+ * Handles storage and retrieval of email settings including:
+ * - SMTP server host and port
+ * - Email account credentials
+ * - Sender name and email address
+ * 
+ * Configuration is stored as JSON in SPIFFS filesystem for persistence.
+ */
+struct EmailConfig {
+  String smtpHost;        // SMTP server host (e.g., "smtp.gmail.com")
+  int smtpPort;           // SMTP server port (e.g., 465 for SSL)
+  String emailAccount;    // Email address for sending
+  String emailPassword;   // App password for email account
+  String senderName;      // Display name for sender
+  
+  /**
+   * @brief Load email configuration from SPIFFS
+   * @return true if configuration loaded successfully, false otherwise
+   * 
+   * Attempts to read email configuration from /email.json file.
+   * If file doesn't exist or is corrupted, returns false and uses defaults.
+   */
+  bool load() {
+    if (!SPIFFS.exists(EMAIL_FILE)) return false;
+    File f = SPIFFS.open(EMAIL_FILE, "r"); 
+    if (!f) return false;
+    
+    DynamicJsonDocument doc(1024); 
+    if (deserializeJson(doc, f)) { 
+      f.close(); 
+      return false; 
+    }
+    f.close();
+    
+    // Load configuration with defaults
+    smtpHost = doc["smtpHost"] | DEFAULT_SMTP_HOST;
+    smtpPort = doc["smtpPort"] | DEFAULT_SMTP_PORT;
+    emailAccount = doc["emailAccount"] | "";
+    emailPassword = doc["emailPassword"] | "";
+    senderName = doc["senderName"] | DEFAULT_SENDER_NAME;
+    return true;
+  }
+  
+  /**
+   * @brief Save email configuration to SPIFFS
+   * @return true if configuration saved successfully, false otherwise
+   * 
+   * Writes current email configuration to /email.json file.
+   */
+  bool save() const {
+    DynamicJsonDocument doc(1024);
+    doc["smtpHost"] = smtpHost;
+    doc["smtpPort"] = smtpPort;
+    doc["emailAccount"] = emailAccount;
+    doc["emailPassword"] = emailPassword;
+    doc["senderName"] = senderName;
+    
+    File f = SPIFFS.open(EMAIL_FILE, "w"); 
+    if (!f) return false;
+    serializeJson(doc, f); 
+    f.close(); 
+    return true;
+  }
+  
+  /**
+   * @brief Check if email configuration is valid
+   * @return true if all required fields are populated
+   */
+  bool isValid() const {
+    return smtpHost.length() > 0 && emailAccount.length() > 0 && emailPassword.length() > 0;
+  }
+} emailCfg;
+
 // ============================================================================
 // WIFI MANAGEMENT FUNCTIONS
 // ============================================================================
@@ -512,6 +607,64 @@ const char* rssiToStrength(int rssi) {
 }
 
 // ============================================================================
+// EMAIL MANAGEMENT FUNCTIONS
+// ============================================================================
+
+/**
+ * @brief Send email using configured SMTP settings
+ * @param toEmail Recipient email address
+ * @param subject Email subject line
+ * @param content Email body content
+ * @return true if email sent successfully, false otherwise
+ * 
+ * @details
+ * This function sends an email using the ESP Mail Client library.
+ * It uses the configured SMTP settings and handles connection errors.
+ * 
+ * @note For Gmail, you need to use an App Password instead of your regular password.
+ * Enable 2-factor authentication and generate an App Password in your Google account.
+ */
+bool sendEmail(const String& toEmail, const String& subject, const String& content) {
+  // Check if email configuration is valid
+  if (!emailCfg.isValid()) {
+    Serial.println("Email configuration incomplete");
+    return false;
+  }
+
+  // Configure SMTP session
+  ESP_Mail_Session session;
+  session.server.host_name = emailCfg.smtpHost.c_str();
+  session.server.port = emailCfg.smtpPort;
+  session.login.email = emailCfg.emailAccount.c_str();
+  session.login.password = emailCfg.emailPassword.c_str();
+  session.login.user_domain = "";
+
+  // Configure email message
+  SMTP_Message mail;
+  mail.sender.name = emailCfg.senderName.c_str();
+  mail.sender.email = emailCfg.emailAccount.c_str();
+  mail.subject = subject.c_str();
+  mail.addRecipient("Recipient", toEmail.c_str());
+  mail.text.content = content.c_str();
+
+  // Attempt to send email
+  Serial.println("Attempting to send email...");
+  
+  if (!smtp.connect(&session)) {
+    Serial.println("Could not connect to SMTP server");
+    return false;
+  }
+  
+  if (!MailClient.sendMail(&smtp, &mail)) {
+    Serial.println("Email sending failed");
+    return false;
+  }
+  
+  Serial.println("Email sent successfully!");
+  return true;
+}
+
+// ============================================================================
 // JSON RESPONSE BUILDERS
 // ============================================================================
 
@@ -551,12 +704,19 @@ String buildStatusJson() {
 
   // Status message and CSS class for UI styling
   if (staConnected) { 
-    sta["status"] = "Connected to " + WiFi.SSID(); 
+    String statusMsg = "Connected to ";
+    statusMsg += WiFi.SSID();
+    sta["status"] = statusMsg;
     sta["statusClass"] = "status-connected"; 
   } else { 
     sta["status"] = "Not connected"; 
     sta["statusClass"] = "status-disconnected"; 
   }
+
+  // Email configuration status
+  JsonObject email = doc.createNestedObject("email");
+  email["configured"] = emailCfg.isValid();
+  email["account"] = emailCfg.emailAccount;
 
   String out; 
   serializeJson(doc, out); 
@@ -663,7 +823,7 @@ void handleRoot() {
     
     // Send proper captive portal redirect response
     addCORS();
-    server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/");
+    server.sendHeader("Location", "http://" + WiFi.softAPIP().toString() + "/");
     server.send(302, "text/plain", "");
     return;
   }
@@ -709,12 +869,169 @@ void handleNotFound() {
       host.startsWith("connectivitycheck.gstatic.com") ||
       host.startsWith("detectportal.firefox.com")) {
     addCORS();
-    server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/");
+    server.sendHeader("Location", "http://" + WiFi.softAPIP().toString() + "/");
     server.send(302, "text/plain", "");
   } else {
     // For other 404s, serve the main page
     handleRoot(); 
   }
+}
+
+// ============================================================================
+// EMAIL API HANDLERS
+// ============================================================================
+
+/**
+ * @brief Handle email configuration load requests
+ */
+void handleEmailLoad() {
+  DynamicJsonDocument doc(1024);
+  doc["smtpHost"] = emailCfg.smtpHost;
+  doc["smtpPort"] = emailCfg.smtpPort;
+  doc["emailAccount"] = emailCfg.emailAccount;
+  doc["senderName"] = emailCfg.senderName;
+  // Note: Password is not returned for security reasons
+  
+  String out; 
+  serializeJson(doc, out);
+  sendJson(200, out);
+}
+
+/**
+ * @brief Handle email configuration save requests
+ */
+void handleEmailSave() {
+  // Validate request body
+  if (!server.hasArg("plain")) { 
+    sendText(400, "Invalid JSON"); 
+    return; 
+  }
+  
+  // Parse JSON request
+  DynamicJsonDocument doc(1024);
+  if (deserializeJson(doc, server.arg("plain"))) { 
+    sendText(400, "Invalid JSON"); 
+    return; 
+  }
+  
+  // Update email configuration from request
+  emailCfg.smtpHost = doc["smtpHost"] | DEFAULT_SMTP_HOST;
+  emailCfg.smtpPort = doc["smtpPort"] | DEFAULT_SMTP_PORT;
+  emailCfg.emailAccount = doc["emailAccount"] | "";
+  emailCfg.emailPassword = doc["emailPassword"] | "";
+  emailCfg.senderName = doc["senderName"] | DEFAULT_SENDER_NAME;
+  
+  // Save configuration to SPIFFS
+  bool ok = emailCfg.save();
+
+  // Log email configuration save
+  Serial.print("Email configuration saved: ");
+  Serial.print(emailCfg.emailAccount);
+  Serial.print(", ");
+  Serial.println(emailCfg.smtpHost);
+
+  // Return response
+  DynamicJsonDocument resp(256);
+  resp["success"] = ok;
+  if (ok) {
+    resp["message"] = "Email configuration saved successfully";
+  } else {
+    resp["message"] = "Failed to save email configuration";
+  }
+  
+  String out; 
+  serializeJson(resp, out);
+  sendJson(ok ? 200 : 500, out);
+}
+
+/**
+ * @brief Handle test email sending requests
+ */
+void handleEmailSend() {
+  // Validate request body
+  if (!server.hasArg("plain")) { 
+    sendText(400, "Invalid JSON"); 
+    return; 
+  }
+  
+  // Parse JSON request
+  DynamicJsonDocument doc(512);
+  if (deserializeJson(doc, server.arg("plain"))) { 
+    sendText(400, "Invalid JSON"); 
+    return; 
+  }
+  
+  // Extract email parameters
+  String toEmail = doc["to"] | "";
+  String subject = doc["subject"] | "Test Email from ESP32 Dashboard";
+  String content = doc["content"] | "This is a test email sent from your ESP32 IoT Configuration Panel.";
+  
+  // Validate required parameters
+  if (!toEmail.length()) { 
+    sendText(400, "Recipient email required"); 
+    return; 
+  }
+
+  // Check if email configuration is valid
+  if (!emailCfg.isValid()) {
+    sendText(400, "Email configuration incomplete. Please configure SMTP settings first.");
+    return;
+  }
+  
+  // Log email attempt
+  Serial.print("Sending test email to: ");
+  Serial.println(toEmail);
+  Serial.print("Subject: ");
+  Serial.println(subject);
+  
+  // Send email via SMTP
+  bool success = sendEmail(toEmail, subject, content);
+  
+  // Build response
+  DynamicJsonDocument resp(256);
+  resp["success"] = success;
+  if (success) {
+    resp["message"] = "Test email sent successfully";
+  } else {
+    resp["error"] = "Failed to send test email. Check SMTP configuration and network connection.";
+  }
+  
+  String out; 
+  serializeJson(resp, out);
+  sendJson(success ? 200 : 500, out);
+}
+
+/**
+ * @brief Handle simple dummy email sending (legacy endpoint)
+ */
+void handleDummyEmail() {
+  String toEmail = server.arg("to");
+  String response;
+
+  if (toEmail.isEmpty()) {
+    server.send(400, "application/json", "{\"message\":\"Email is empty!\"}");
+    return;
+  }
+
+  // Check if email configuration is valid
+  if (!emailCfg.isValid()) {
+    response = "{\"message\":\"Email configuration incomplete!\"}";
+    server.send(400, "application/json", response);
+    return;
+  }
+
+  // Send test email
+  bool success = sendEmail(toEmail, 
+                          "Dummy Test Email from ESP32", 
+                          "This is a dummy test email sent from your ESP32 IoT Configuration Panel.");
+
+  if (success) {
+    response = "{\"message\":\"Email sent successfully!\"}";
+  } else {
+    response = "{\"message\":\"Email sending failed!\"}";
+  }
+
+  server.send(200, "application/json", response);
 }
 
 // ============================================================================
@@ -754,6 +1071,7 @@ void setup() {
   wifiCfg.load(); 
   gsmCfg.load(); 
   userCfg.load();
+  emailCfg.load();  // Load email configuration
 
   // Start Access Point with saved or default configuration
   String apSsid = wifiCfg.apSsid.length() ? wifiCfg.apSsid : DEFAULT_AP_SSID;
@@ -762,12 +1080,15 @@ void setup() {
 
   // Log Access Point information
   Serial.println("Access Point started:");
-  Serial.println("SSID: " + apSsid);
-  Serial.println("IP: " + ipToStr(WiFi.softAPIP()));
+  Serial.print("SSID: ");
+  Serial.println(apSsid);
+  Serial.print("IP: ");
+  Serial.println(ipToStr(WiFi.softAPIP()));
 
   // Attempt to connect to saved WiFi network in Station mode
   if (wifiCfg.staSsid.length()) {
-    Serial.println("Attempting to connect to saved WiFi: " + wifiCfg.staSsid);
+    Serial.print("Attempting to connect to saved WiFi: ");
+    Serial.println(wifiCfg.staSsid);
     connectSTA(wifiCfg.staSsid, wifiCfg.staPass);
   }
 
@@ -788,7 +1109,7 @@ void setup() {
   // Captive portal detection endpoints for various devices
   server.on("/generate_204", HTTP_GET, []() {
     addCORS();
-    server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/");
+    server.sendHeader("Location", "http://" + WiFi.softAPIP().toString() + "/");
     server.send(302, "text/plain", "");
   });
   
@@ -800,7 +1121,7 @@ void setup() {
   // Additional captive portal endpoints for different platforms
   server.on("/hotspot-detect.html", HTTP_GET, []() {
     addCORS();
-    server.sendHeader("Location", String("http://") + WiFi.softAPIP().toString() + "/");
+    server.sendHeader("Location", "http://" + WiFi.softAPIP().toString() + "/");
     server.send(302, "text/plain", "");
   });
   
@@ -834,7 +1155,9 @@ void setup() {
   server.on("/api/wifi/scan", HTTP_GET, []() {
     Serial.println("Starting WiFi scan...");
     int n = WiFi.scanNetworks(false, true);
-    Serial.println("Found " + String(n) + " networks");
+    Serial.print("Found ");
+    Serial.print(n);
+    Serial.println(" networks");
 
     // Create JSON document for network list
     DynamicJsonDocument doc(8192);
@@ -914,7 +1237,8 @@ void setup() {
       return; 
     }
 
-    Serial.println("Attempting to connect to: " + ssid);
+    Serial.print("Attempting to connect to: ");
+    Serial.println(ssid);
     
     // Save configuration to SPIFFS for persistence
     wifiCfg.staSsid = ssid; 
@@ -955,7 +1279,8 @@ void setup() {
       resp["ssid"] = WiFi.SSID(); 
       resp["rssi"] = WiFi.RSSI();
       resp["message"] = "Connected successfully";
-      Serial.println("WiFi connected successfully to: " + WiFi.SSID());
+      Serial.print("WiFi connected successfully to: ");
+      Serial.println(WiFi.SSID());
     } else { 
       // Connection failed - return error information
       resp["ip"] = "0.0.0.0"; 
@@ -1064,11 +1389,15 @@ void setup() {
     }
 
     // Log APN configuration details
-    Serial.printf("[/api/gsm/setapn] APN configuration: cid=%s pdp=%s apn=%s\n", 
-                  cid.c_str(), pdp.c_str(), apn.c_str());
+    Serial.print("APN configuration: cid=");
+    Serial.print(cid);
+    Serial.print(" pdp=");
+    Serial.print(pdp);
+    Serial.print(" apn=");
+    Serial.println(apn);
     
     bool ok = true; // APN configuration saved to file
-    Serial.println("[SET_APN] Configuration saved to file");
+    Serial.println("APN configuration saved to file");
 
     // Persist APN configuration to SPIFFS
     gsmCfg.apn = apn; 
@@ -1092,7 +1421,11 @@ void setup() {
     
     // Update cache only if needed (5-minute intervals or force refresh)
     if (gsmCache.needsUpdate(forceRefresh)) {
-      Serial.println(forceRefresh ? "Force refreshing GSM signal data" : "Updating GSM signal data (5-minute interval)");
+      if (forceRefresh) {
+        Serial.println("Force refreshing GSM signal data");
+      } else {
+        Serial.println("Updating GSM signal data (5-minute interval)");
+      }
       gsmCache.updateSignal(forceRefresh);
     } else {
       Serial.println("Using cached GSM signal data");
@@ -1100,7 +1433,13 @@ void setup() {
     
     // Build response with signal information
     doc["ok"] = (gsmCache.signalStrength != -999);
-    doc["raw"] = forceRefresh ? "Signal strength force refreshed" : (gsmCache.needsUpdate() ? "Signal strength updated" : "Using cached data");
+    if (forceRefresh) {
+      doc["raw"] = "Signal strength force refreshed";
+    } else if (gsmCache.needsUpdate()) {
+      doc["raw"] = "Signal strength updated";
+    } else {
+      doc["raw"] = "Using cached data";
+    }
     doc["dbm"] = gsmCache.signalStrength;
     doc["csq"] = gsmCache.signalQuality;
     doc["ber"] = 99; // BER not available from getSignalStrength()
@@ -1124,7 +1463,11 @@ void setup() {
     
     // Update cache only if needed (5-minute intervals or force refresh)
     if (gsmCache.needsUpdate(forceRefresh)) {
-      Serial.println(forceRefresh ? "Force refreshing GSM network data" : "Updating GSM network data (5-minute interval)");
+      if (forceRefresh) {
+        Serial.println("Force refreshing GSM network data");
+      } else {
+        Serial.println("Updating GSM network data (5-minute interval)");
+      }
       gsmCache.updateNetwork(forceRefresh);
     } else {
       Serial.println("Using cached GSM network data");
@@ -1176,8 +1519,10 @@ void setup() {
     }
     
     // Log SMS attempt
-    Serial.println("Sending SMS to: " + phoneNumber);
-    Serial.println("Message: " + message);
+    Serial.print("Sending SMS to: ");
+    Serial.println(phoneNumber);
+    Serial.print("Message: ");
+    Serial.println(message);
     
     // Send SMS via GSM modem
     bool success = gsmModem.sendSMS(phoneNumber, message);
@@ -1222,7 +1567,8 @@ void setup() {
     }
     
     // Log call attempt
-    Serial.println("Making call to: " + phoneNumber);
+    Serial.print("Making call to: ");
+    Serial.println(phoneNumber);
     
     // Initiate call via GSM modem
     bool success = gsmModem.makeCall(phoneNumber);
@@ -1246,6 +1592,26 @@ void setup() {
     sendJson(success ? 200 : 500, out);
   });
   server.on("/api/gsm/call", HTTP_OPTIONS, handleOptions);
+
+  // ============================================================================
+  // EMAIL API ENDPOINTS
+  // ============================================================================
+
+  // Email configuration load API endpoint
+  server.on("/api/load/email", HTTP_GET, handleEmailLoad);
+  server.on("/api/load/email", HTTP_OPTIONS, handleOptions);
+
+  // Email configuration save API endpoint
+  server.on("/api/save/email", HTTP_POST, handleEmailSave);
+  server.on("/api/save/email", HTTP_OPTIONS, handleOptions);
+
+  // Email test send API endpoint
+  server.on("/api/email/send", HTTP_POST, handleEmailSend);
+  server.on("/api/email/send", HTTP_OPTIONS, handleOptions);
+
+  // Legacy dummy email endpoint (for compatibility)
+  server.on("/sendDummyEmail", HTTP_GET, handleDummyEmail);
+  server.on("/sendDummyEmail", HTTP_OPTIONS, handleOptions);
 
   // User profile load API endpoint
   server.on("/api/load/user", HTTP_GET, []() {
@@ -1285,13 +1651,21 @@ void setup() {
     bool ok = userCfg.save();
 
     // Log user data save operation
-    Serial.printf("[/api/save/user] User data saved: %s, %s, %s\n",
-                  userCfg.name.c_str(), userCfg.email.c_str(), userCfg.phone.c_str());
+    Serial.print("User data saved: ");
+    Serial.print(userCfg.name);
+    Serial.print(", ");
+    Serial.print(userCfg.email);
+    Serial.print(", ");
+    Serial.println(userCfg.phone);
 
     // Return JSON response with success status
     DynamicJsonDocument resp(256);
     resp["success"] = ok;
-    resp["message"] = ok ? "User data saved successfully" : "Failed to save user data";
+    if (ok) {
+      resp["message"] = "User data saved successfully";
+    } else {
+      resp["message"] = "Failed to save user data";
+    }
     
     String out; 
     serializeJson(resp, out);
@@ -1338,8 +1712,9 @@ void setup() {
 
   // Start the web server
   server.begin();
-  Serial.println("[HTTP] server started");
-  Serial.println("Configuration panel available at: http://" + ipToStr(WiFi.softAPIP()));
+  Serial.println("HTTP server started");
+  Serial.print("Configuration panel available at: http://");
+  Serial.println(ipToStr(WiFi.softAPIP()));
 }
 
 // ============================================================================
@@ -1369,7 +1744,15 @@ void loop() {
   static unsigned long lastStatusPrint = 0;
   if (millis() - lastStatusPrint > 30000) {
     lastStatusPrint = millis();
-    Serial.println("Status - AP: " + ipToStr(WiFi.softAPIP()) +
-                   ", STA: " + (WiFi.status() == WL_CONNECTED ? ipToStr(WiFi.localIP()) : "Not connected"));
+    Serial.print("Status - AP: ");
+    Serial.print(ipToStr(WiFi.softAPIP()));
+    Serial.print(", STA: ");
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.print(ipToStr(WiFi.localIP()));
+    } else {
+      Serial.print("Not connected");
+    }
+    Serial.print(", Email: ");
+    Serial.println(emailCfg.isValid() ? "Configured" : "Not configured");
   }
 }
