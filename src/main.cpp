@@ -48,6 +48,7 @@
 
 // Embedded web dashboard (stored in PROGMEM to save RAM)
 #include "dashboard_html.h"   // Complete HTML/CSS/JS dashboard interface
+#include "config_html.h"     // Configuration mode interface for DRD
 
 // ============================================================================
 // NETWORK AND SERVER CONFIGURATION
@@ -100,6 +101,41 @@ static const char* WIFI_FILE = "/wifi.json";   // WiFi configuration (AP and Sta
 static const char* GSM_FILE  = "/gsm.json";    // GSM modem configuration (APN, carrier settings)
 static const char* USER_FILE = "/user.json";   // User profile data (name, email, phone)
 static const char* EMAIL_FILE = "/email.json"; // Email configuration (SMTP settings)
+
+// ============================================================================
+// DRD (DEVICE RESET DETECTION) CONFIGURATION
+// ============================================================================
+
+/**
+ * @brief DRD button configuration
+ * Button connected between 5V and GPIO26 for device reset detection
+ */
+#define DRD_BUTTON_PIN 26        // GPIO pin for DRD button
+#define DRD_DEBOUNCE_TIME 50     // Debounce time in milliseconds
+#define DRD_DOUBLE_PRESS_TIME 5000 // Time window for double press detection (5 seconds)
+#define DRD_HOLD_TIME 2000       // Time for long press detection (2 seconds)
+
+/**
+ * @brief DRD button states for state machine
+ */
+enum DRDButtonState {
+  DRD_IDLE,           // Button not pressed
+  DRD_PRESSED,        // Button pressed, waiting for debounce
+  DRD_HELD,           // Button held for long press
+  DRD_RELEASED        // Button released, waiting for debounce
+};
+
+/**
+ * @brief DRD state variables with enhanced debouncing
+ * These variables track the button press state and timing for robust detection
+ */
+volatile DRDButtonState drdButtonState = DRD_IDLE;     // Current button state
+volatile unsigned long drdStateChangeTime = 0;          // Time of last state change
+volatile unsigned long drdPressStartTime = 0;          // Time when press started
+volatile unsigned long drdLastPressTime = 0;           // Timestamp of last complete press
+volatile int drdPressCount = 0;                        // Number of presses in current window
+volatile bool drdConfigMode = false;                   // Current mode: false=dashboard, true=config
+volatile bool drdLongPressDetected = false;            // Flag for long press detection
 
 // ============================================================================
 // HARDWARE CONFIGURATION
@@ -878,9 +914,17 @@ void handleRoot() {
     return;
   }
   
-  // Serve the main dashboard for all other requests
+  // Serve different interfaces based on DRD mode
   addCORS();
-  server.send_P(200, "text/html", dashboard_html, dashboard_html_len);
+  if (drdConfigMode) {
+    // Serve configuration mode interface
+    Serial.println("Serving Configuration Mode interface");
+    server.send_P(200, "text/html", config_html, config_html_len);
+  } else {
+    // Serve normal dashboard interface
+    Serial.println("Serving Dashboard Mode interface");
+    server.send_P(200, "text/html", dashboard_html, dashboard_html_len);
+  }
 }
 
 /**
@@ -1085,6 +1129,215 @@ void handleDummyEmail() {
 }
 
 // ============================================================================
+// DRD (DEVICE RESET DETECTION) FUNCTIONS
+// ============================================================================
+
+// Forward declaration
+void processButtonPress(unsigned long currentTime);
+
+/**
+ * @brief DRD button interrupt handler with enhanced debouncing
+ * 
+ * @details
+ * This interrupt handler implements a state machine for robust button detection.
+ * It handles debouncing, press/release detection, and long press detection.
+ * The interrupt is triggered on both rising and falling edges for complete detection.
+ */
+void IRAM_ATTR drdButtonISR() {
+  static unsigned long lastInterruptTime = 0;
+  unsigned long interruptTime = millis();
+  
+  // Basic hardware debounce: ignore interrupts that occur too quickly
+  if (interruptTime - lastInterruptTime > 10) { // 10ms hardware debounce
+    bool currentState = digitalRead(DRD_BUTTON_PIN);
+    
+    // Update state change time
+    drdStateChangeTime = interruptTime;
+    
+    if (currentState == LOW) { // Button pressed (assuming pull-up resistor)
+      if (drdButtonState == DRD_IDLE) {
+        drdButtonState = DRD_PRESSED;
+        drdPressStartTime = interruptTime;
+      }
+    } else { // Button released
+      if (drdButtonState == DRD_PRESSED || drdButtonState == DRD_HELD) {
+        drdButtonState = DRD_RELEASED;
+      }
+    }
+    
+    lastInterruptTime = interruptTime;
+  }
+}
+
+/**
+ * @brief Enhanced DRD state machine with soft debouncing
+ * 
+ * @details
+ * This function implements a complete state machine for button detection with:
+ * - Soft debouncing using state transitions
+ * - Press and release detection
+ * - Long press detection (2+ seconds)
+ * - Double-press detection within 5-second window
+ * - Automatic state resets and timeouts
+ * 
+ * Should be called regularly from the main loop (every 10-50ms recommended).
+ */
+void checkDRD() {
+  static unsigned long lastCheckTime = 0;
+  unsigned long currentTime = millis();
+  
+  // Check every 20ms for responsive detection
+  if (currentTime - lastCheckTime < 20) {
+    return;
+  }
+  lastCheckTime = currentTime;
+  
+  // State machine implementation
+  switch (drdButtonState) {
+    
+    case DRD_IDLE:
+      // Button is not pressed, waiting for press
+      break;
+      
+    case DRD_PRESSED:
+      // Button pressed, check if debounce time has passed
+      if (currentTime - drdStateChangeTime >= DRD_DEBOUNCE_TIME) {
+        // Verify button is still pressed (soft debounce)
+        if (digitalRead(DRD_BUTTON_PIN) == LOW) {
+          // Confirmed press - check for long press
+          if (currentTime - drdPressStartTime >= DRD_HOLD_TIME) {
+            drdButtonState = DRD_HELD;
+            drdLongPressDetected = true;
+            Serial.println("DRD Long press detected (" + String(DRD_HOLD_TIME/1000) + "s)");
+          }
+          // Stay in PRESSED state for short presses
+        } else {
+          // Button released during debounce - ignore this press
+          drdButtonState = DRD_IDLE;
+          Serial.println("DRD Press ignored (debounce)");
+        }
+      }
+      break;
+      
+    case DRD_HELD:
+      // Button held for long press, wait for release
+      if (digitalRead(DRD_BUTTON_PIN) == HIGH) {
+        // Button released, start release debounce
+        drdButtonState = DRD_RELEASED;
+        drdStateChangeTime = currentTime;
+        Serial.println("DRD Long press released");
+      }
+      break;
+      
+    case DRD_RELEASED:
+      // Button released, check if debounce time has passed
+      if (currentTime - drdStateChangeTime >= DRD_DEBOUNCE_TIME) {
+        // Verify button is still released (soft debounce)
+        if (digitalRead(DRD_BUTTON_PIN) == HIGH) {
+          // Confirmed release - process the press
+          processButtonPress(currentTime);
+        } else {
+          // Button pressed again during debounce - ignore release
+          drdButtonState = DRD_IDLE;
+          Serial.println("DRD Release ignored (debounce)");
+        }
+      }
+      break;
+  }
+  
+  // Handle press count timeout
+  if (drdPressCount > 0 && (currentTime - drdLastPressTime) > DRD_DOUBLE_PRESS_TIME) {
+    Serial.println("DRD Timeout - resetting press count (" + String(drdPressCount) + " presses)");
+    drdPressCount = 0;
+  }
+}
+
+/**
+ * @brief Process a confirmed button press
+ * 
+ * @details
+ * This function handles the logic for processing a confirmed button press.
+ * It manages press counting, double-press detection, and mode switching.
+ * 
+ * @param currentTime Current timestamp for timing calculations
+ */
+void processButtonPress(unsigned long currentTime) {
+  // Reset to idle state
+  drdButtonState = DRD_IDLE;
+  
+  // Increment press count
+  drdPressCount++;
+  drdLastPressTime = currentTime;
+  
+  Serial.println("DRD Button press confirmed - Count: " + String(drdPressCount));
+  
+  // Check for double press after a short delay
+  static unsigned long lastProcessTime = 0;
+  if (currentTime - lastProcessTime > 500) { // 500ms delay to allow for second press
+    
+    if (drdPressCount >= 2) {
+      // Double press detected - switch modes
+      drdConfigMode = !drdConfigMode;
+      
+      Serial.println("DRD Double-press detected! Switching to " + 
+                    String(drdConfigMode ? "Configuration" : "Dashboard") + " mode");
+      
+      // Reset press count
+      drdPressCount = 0;
+      
+      // Optional: Add visual feedback (LED blink, etc.)
+      // digitalWrite(LED_PIN, HIGH);
+      // delay(200);
+      // digitalWrite(LED_PIN, LOW);
+      
+    } else if (drdPressCount == 1) {
+      // Single press - check if it was a long press
+      if (drdLongPressDetected) {
+        Serial.println("DRD Long press detected - could be used for factory reset");
+        // Future: Implement factory reset functionality
+        drdLongPressDetected = false;
+      } else {
+        Serial.println("DRD Single press detected - resetting count");
+      }
+      drdPressCount = 0;
+    }
+    
+    lastProcessTime = currentTime;
+  }
+}
+
+/**
+ * @brief Initialize DRD button and interrupt with enhanced features
+ * 
+ * @details
+ * Sets up the DRD button pin with pull-up resistor and configures the interrupt
+ * to trigger on both rising and falling edges for complete press detection.
+ * Initializes the state machine and all timing variables.
+ */
+void initDRD() {
+  // Configure button pin with internal pull-up resistor
+  pinMode(DRD_BUTTON_PIN, INPUT_PULLUP);
+  
+  // Initialize state machine variables
+  drdButtonState = DRD_IDLE;
+  drdStateChangeTime = 0;
+  drdPressStartTime = 0;
+  drdLastPressTime = 0;
+  drdPressCount = 0;
+  drdConfigMode = false;
+  drdLongPressDetected = false;
+  
+  // Attach interrupt for both rising and falling edges
+  attachInterrupt(digitalPinToInterrupt(DRD_BUTTON_PIN), drdButtonISR, CHANGE);
+  
+  Serial.println("DRD Enhanced System initialized on GPIO" + String(DRD_BUTTON_PIN));
+  Serial.println("Features: Soft debouncing, Long press detection, Double-press switching");
+  Serial.println("Timing: " + String(DRD_DEBOUNCE_TIME) + "ms debounce, " + 
+                String(DRD_HOLD_TIME/1000) + "s long press, " + 
+                String(DRD_DOUBLE_PRESS_TIME/1000) + "s double-press window");
+}
+
+// ============================================================================
 // MAIN APPLICATION SETUP
 // ============================================================================
 
@@ -1100,6 +1353,7 @@ void handleDummyEmail() {
  * 5. WiFi Station mode connection attempt
  * 6. GSM modem initialization
  * 7. Web server and API endpoint configuration
+ * 8. DRD (Device Reset Detection) initialization
  * 
  * The function sets up both WiFi modes (AP+STA) and initializes the GSM modem
  * for dual-mode operation. All configuration is loaded from SPIFFS files.
@@ -1122,6 +1376,9 @@ void setup() {
   gsmCfg.load(); 
   userCfg.load();
   emailCfg.load();  // Load email configuration
+
+  // Initialize DRD (Device Reset Detection) system
+  initDRD();
 
   // Start Access Point with saved or default configuration
   String apSsid = wifiCfg.apSsid.length() ? wifiCfg.apSsid : DEFAULT_AP_SSID;
@@ -1847,6 +2104,9 @@ void loop() {
   
   // Handle web server client requests
   server.handleClient();
+
+  // Check for DRD (Device Reset Detection) button presses
+  checkDRD();
 
   // Periodic status logging every 30 seconds
   static unsigned long lastStatusPrint = 0;
