@@ -1129,6 +1129,136 @@ void handleDummyEmail() {
 }
 
 // ============================================================================
+// CONFIGURATION MODE API HANDLERS (for config_html.h)
+// ============================================================================
+
+// Forward declaration
+String getCurrentTimeString();
+
+/**
+ * @brief Handle Access Point configuration save
+ * 
+ * @details
+ * Saves Access Point SSID and password configuration to SPIFFS.
+ * Validates input parameters and updates the WiFi configuration.
+ */
+void handleConfigApSave() {
+  addCORS();
+  
+  if (!server.hasArg("plain")) {
+    sendJson(400, "{\"success\":false,\"message\":\"Invalid JSON\"}");
+    return;
+  }
+  
+  DynamicJsonDocument doc(1024);
+  DeserializationError error = deserializeJson(doc, server.arg("plain"));
+  
+  if (error) {
+    sendJson(400, "{\"success\":false,\"message\":\"Invalid JSON format\"}");
+    return;
+  }
+  
+  String apSsid = doc["apSsid"].as<String>();
+  String apPass = doc["apPass"].as<String>();
+  
+  // Validate SSID length
+  if (apSsid.length() > 32) {
+    sendJson(400, "{\"success\":false,\"message\":\"SSID must be at most 32 characters\"}");
+    return;
+  }
+  
+  // Validate password length
+  if (apPass.length() > 0 && (apPass.length() < 8 || apPass.length() > 63)) {
+    sendJson(400, "{\"success\":false,\"message\":\"Password must be 8-63 characters or empty\"}");
+    return;
+  }
+  
+  // Update WiFi configuration
+  wifiCfg.apSsid = apSsid;
+  wifiCfg.apPass = apPass;
+  
+  // Save to SPIFFS
+  bool success = wifiCfg.save();
+  
+  DynamicJsonDocument response(512);
+  response["success"] = success;
+  response["message"] = success ? "AP configuration saved successfully" : "Failed to save AP configuration";
+  response["apSsid"] = apSsid;
+  response["apPass"] = apPass.length() > 0 ? "[SET]" : "";
+  response["lastSaved"] = success ? getCurrentTimeString() : "";
+  
+  String out;
+  serializeJson(response, out);
+  sendJson(success ? 200 : 500, out);
+}
+
+/**
+ * @brief Handle Access Point configuration apply
+ * 
+ * @details
+ * Applies the saved Access Point configuration by restarting the AP.
+ * This will change the SSID and password of the Access Point.
+ */
+void handleConfigApApply() {
+  addCORS();
+  
+  // Restart Access Point with current configuration
+  String apSsid = wifiCfg.apSsid.length() ? wifiCfg.apSsid : DEFAULT_AP_SSID;
+  String apPass = wifiCfg.apPass.length() ? wifiCfg.apPass : DEFAULT_AP_PASS;
+  
+  Serial.println("Applying AP configuration: SSID=" + apSsid + ", Password=" + (apPass.length() > 0 ? "[SET]" : "[OPEN]"));
+  
+  // Stop current AP
+  WiFi.softAPdisconnect(true);
+  delay(1000);
+  
+  // Start new AP
+  bool success = WiFi.softAP(apSsid, apPass);
+  
+  DynamicJsonDocument response(512);
+  response["success"] = success;
+  response["message"] = success ? "AP configuration applied successfully" : "Failed to apply AP configuration";
+  response["apSsid"] = apSsid;
+  response["apPass"] = apPass.length() > 0 ? "[SET]" : "";
+  response["apIp"] = success ? WiFi.softAPIP().toString() : "";
+  
+  String out;
+  serializeJson(response, out);
+  sendJson(success ? 200 : 500, out);
+}
+
+/**
+ * @brief Handle Access Point configuration load
+ * 
+ * @details
+ * Returns the current Access Point configuration including SSID, password status,
+ * and last saved timestamp.
+ */
+void handleConfigApLoad() {
+  addCORS();
+  
+  DynamicJsonDocument response(512);
+  response["success"] = true;
+  response["apSsid"] = wifiCfg.apSsid;
+  response["apPass"] = wifiCfg.apPass.length() > 0 ? "[SET]" : "";
+  response["lastSaved"] = getCurrentTimeString();
+  
+  String out;
+  serializeJson(response, out);
+  sendJson(200, out);
+}
+
+/**
+ * @brief Get current time as formatted string
+ * 
+ * @details
+ * Returns current time in a readable format for timestamps.
+ */
+String getCurrentTimeString() {
+  return String(millis() / 1000) + "s uptime";
+}
+
+// ============================================================================
 // DRD (DEVICE RESET DETECTION) FUNCTIONS
 // ============================================================================
 
@@ -1154,14 +1284,17 @@ void IRAM_ATTR drdButtonISR() {
     // Update state change time
     drdStateChangeTime = interruptTime;
     
-    if (currentState == LOW) { // Button pressed (assuming pull-up resistor)
+    if (currentState == HIGH) { // Button pressed (5V connected to GPIO26)
       if (drdButtonState == DRD_IDLE) {
         drdButtonState = DRD_PRESSED;
         drdPressStartTime = interruptTime;
+        Serial.println("DRD Interrupt: Button PRESSED (state: IDLE->PRESSED)");
       }
-    } else { // Button released
+    } else { // Button released (GPIO26 floating or grounded)
       if (drdButtonState == DRD_PRESSED || drdButtonState == DRD_HELD) {
+        String oldState = (drdButtonState == DRD_PRESSED) ? "PRESSED" : "HELD";
         drdButtonState = DRD_RELEASED;
+        Serial.println("DRD Interrupt: Button RELEASED (state: " + oldState + "->RELEASED)");
       }
     }
     
@@ -1203,25 +1336,25 @@ void checkDRD() {
       // Button pressed, check if debounce time has passed
       if (currentTime - drdStateChangeTime >= DRD_DEBOUNCE_TIME) {
         // Verify button is still pressed (soft debounce)
-        if (digitalRead(DRD_BUTTON_PIN) == LOW) {
+        if (digitalRead(DRD_BUTTON_PIN) == HIGH) {
           // Confirmed press - check for long press
           if (currentTime - drdPressStartTime >= DRD_HOLD_TIME) {
             drdButtonState = DRD_HELD;
             drdLongPressDetected = true;
-            Serial.println("DRD Long press detected (" + String(DRD_HOLD_TIME/1000) + "s)");
+            Serial.println("DRD State: PRESSED->HELD (Long press detected " + String(DRD_HOLD_TIME/1000) + "s)");
           }
           // Stay in PRESSED state for short presses
         } else {
           // Button released during debounce - ignore this press
           drdButtonState = DRD_IDLE;
-          Serial.println("DRD Press ignored (debounce)");
+          Serial.println("DRD State: PRESSED->IDLE (Press ignored - debounce)");
         }
       }
       break;
       
     case DRD_HELD:
       // Button held for long press, wait for release
-      if (digitalRead(DRD_BUTTON_PIN) == HIGH) {
+      if (digitalRead(DRD_BUTTON_PIN) == LOW) {
         // Button released, start release debounce
         drdButtonState = DRD_RELEASED;
         drdStateChangeTime = currentTime;
@@ -1233,31 +1366,36 @@ void checkDRD() {
       // Button released, check if debounce time has passed
       if (currentTime - drdStateChangeTime >= DRD_DEBOUNCE_TIME) {
         // Verify button is still released (soft debounce)
-        if (digitalRead(DRD_BUTTON_PIN) == HIGH) {
+        if (digitalRead(DRD_BUTTON_PIN) == LOW) {
           // Confirmed release - process the press
+          Serial.println("DRD State: RELEASED->IDLE (Processing press)");
           processButtonPress(currentTime);
         } else {
           // Button pressed again during debounce - ignore release
           drdButtonState = DRD_IDLE;
-          Serial.println("DRD Release ignored (debounce)");
+          Serial.println("DRD State: RELEASED->IDLE (Release ignored - debounce)");
         }
       }
       break;
   }
   
-  // Handle press count timeout
-  if (drdPressCount > 0 && (currentTime - drdLastPressTime) > DRD_DOUBLE_PRESS_TIME) {
-    Serial.println("DRD Timeout - resetting press count (" + String(drdPressCount) + " presses)");
+  // Handle press count timeout - reset after 2 seconds for single press
+  if (drdPressCount > 0 && (currentTime - drdLastPressTime) > 2000) {
+    if (drdPressCount == 1) {
+      Serial.println("DRD Single press timeout - resetting count");
+    } else {
+      Serial.println("DRD Timeout - resetting press count (" + String(drdPressCount) + " presses)");
+    }
     drdPressCount = 0;
   }
 }
 
 /**
- * @brief Process a confirmed button press
+ * @brief Process a confirmed button press with simplified double-press detection
  * 
  * @details
  * This function handles the logic for processing a confirmed button press.
- * It manages press counting, double-press detection, and mode switching.
+ * It manages press counting and double-press detection with simplified timing.
  * 
  * @param currentTime Current timestamp for timing calculations
  */
@@ -1271,38 +1409,31 @@ void processButtonPress(unsigned long currentTime) {
   
   Serial.println("DRD Button press confirmed - Count: " + String(drdPressCount));
   
-  // Check for double press after a short delay
-  static unsigned long lastProcessTime = 0;
-  if (currentTime - lastProcessTime > 500) { // 500ms delay to allow for second press
+  // Check for double press immediately
+  if (drdPressCount >= 2) {
+    // Double press detected - switch modes
+    drdConfigMode = !drdConfigMode;
     
-    if (drdPressCount >= 2) {
-      // Double press detected - switch modes
-      drdConfigMode = !drdConfigMode;
-      
-      Serial.println("DRD Double-press detected! Switching to " + 
-                    String(drdConfigMode ? "Configuration" : "Dashboard") + " mode");
-      
-      // Reset press count
-      drdPressCount = 0;
-      
-      // Optional: Add visual feedback (LED blink, etc.)
-      // digitalWrite(LED_PIN, HIGH);
-      // delay(200);
-      // digitalWrite(LED_PIN, LOW);
-      
-    } else if (drdPressCount == 1) {
-      // Single press - check if it was a long press
-      if (drdLongPressDetected) {
-        Serial.println("DRD Long press detected - could be used for factory reset");
-        // Future: Implement factory reset functionality
-        drdLongPressDetected = false;
-      } else {
-        Serial.println("DRD Single press detected - resetting count");
-      }
-      drdPressCount = 0;
+    Serial.println("DRD Double-press detected! Switching to " + 
+                  String(drdConfigMode ? "Configuration" : "Dashboard") + " mode");
+    
+    // Reset press count
+    drdPressCount = 0;
+    
+    // Optional: Add visual feedback (LED blink, etc.)
+    // digitalWrite(LED_PIN, HIGH);
+    // delay(200);
+    // digitalWrite(LED_PIN, LOW);
+    
+  } else if (drdPressCount == 1) {
+    // Single press - check if it was a long press
+    if (drdLongPressDetected) {
+      Serial.println("DRD Long press detected - could be used for factory reset");
+      // Future: Implement factory reset functionality
+      drdLongPressDetected = false;
+    } else {
+      Serial.println("DRD Single press detected - waiting for potential second press");
     }
-    
-    lastProcessTime = currentTime;
   }
 }
 
@@ -1315,8 +1446,8 @@ void processButtonPress(unsigned long currentTime) {
  * Initializes the state machine and all timing variables.
  */
 void initDRD() {
-  // Configure button pin with internal pull-up resistor
-  pinMode(DRD_BUTTON_PIN, INPUT_PULLUP);
+  // Configure button pin as input (button connects 5V to GPIO26)
+  pinMode(DRD_BUTTON_PIN, INPUT);
   
   // Initialize state machine variables
   drdButtonState = DRD_IDLE;
@@ -1331,6 +1462,7 @@ void initDRD() {
   attachInterrupt(digitalPinToInterrupt(DRD_BUTTON_PIN), drdButtonISR, CHANGE);
   
   Serial.println("DRD Enhanced System initialized on GPIO" + String(DRD_BUTTON_PIN));
+  Serial.println("Button wiring: 5V -> Button -> GPIO26 (HIGH when pressed)");
   Serial.println("Features: Soft debouncing, Long press detection, Double-press switching");
   Serial.println("Timing: " + String(DRD_DEBOUNCE_TIME) + "ms debounce, " + 
                 String(DRD_HOLD_TIME/1000) + "s long press, " + 
@@ -1977,6 +2109,19 @@ void setup() {
     sendJson(success ? 200 : 500, out);
   });
   server.on("/api/email/gsm/send", HTTP_OPTIONS, handleOptions);
+
+  // ============================================================================
+  // CONFIGURATION MODE API ENDPOINTS (for config_html.h)
+  // ============================================================================
+
+  // Access Point configuration endpoints
+  server.on("/api/config/ap/save", HTTP_POST, handleConfigApSave);
+  server.on("/api/config/ap/save", HTTP_OPTIONS, handleOptions);
+  server.on("/api/config/ap/apply", HTTP_POST, handleConfigApApply);
+  server.on("/api/config/ap/apply", HTTP_OPTIONS, handleOptions);
+  server.on("/api/config/ap/load", HTTP_GET, handleConfigApLoad);
+  server.on("/api/config/ap/load", HTTP_OPTIONS, handleOptions);
+
 
   // User profile load API endpoint
   server.on("/api/load/user", HTTP_GET, []() {
