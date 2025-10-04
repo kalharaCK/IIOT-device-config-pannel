@@ -20,7 +20,7 @@
 #include <Arduino.h>
 
 #ifndef SMTP_DEBUG
-#define SMTP_DEBUG 0
+#define SMTP_DEBUG 1
 #endif
 
 class SMTP {
