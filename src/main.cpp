@@ -1,27 +1,5 @@
 /**
- * @file main.cpp
- * @brief ESP32 IoT Configuration Panel with GSM/LTE and Email Integration
- * @author IoT Device Dashboard Project
- * @version 2.2.0
- * @date 2025-01-30
- * 
- * Main application for ESP32-based IoT monitoring and configuration system.
- * Features:
- * - Dual-mode WiFi (Access Point + Station)
- * - GSM/LTE modem integration via SIMCom A76xx modules
- * - Email notification system with Gmail SMTP
- * - Web-based configuration dashboard with captive portal
- * - Real-time status monitoring and device management
- * - JSON-based configuration persistence
- * 
- * Hardware Requirements:
- * - IIoT dev module
- * - Wiring: ESP32 RX2 (GPIO 16) -> Modem TX, ESP32 TX2 (GPIO 17) -> Modem RX
- * 
- * Network Configuration:
- * - Access Point: ESP32-AccessPoint (default) or user-configured
- * - Station mode: Connects to user-specified WiFi networks
- * - Captive portal for easy initial configuration
+
  * 
  * API Endpoints:
  * - GET/POST /api/status - System status information
@@ -41,14 +19,13 @@
 #include <SPIFFS.h>      // File system for configuration storage
 #include <ArduinoJson.h> // JSON parsing and generation
 
-#include <ESP_Mail_Client.h> // Email sending library
+//#include <ESP_Mail_Client.h> // Email sending library
 
 // Custom GSM library for SIMCom A76xx modules
 #include "GSM_Test.h"
 
 // Embedded web dashboard (stored in PROGMEM to save RAM)
 #include "dashboard_html.h"   // Complete HTML/CSS/JS dashboard interface
-#include "config_html.h"     // Configuration mode interface for DRD
 
 // ============================================================================
 // NETWORK AND SERVER CONFIGURATION
@@ -68,11 +45,7 @@ DNSServer dnsServer;
  */
 WebServer server(80);
 
-/**
- * @brief SMTP email client instance
- * Handles email sending via Gmail SMTP server
- */
-SMTPSession smtp;
+
 
 // ============================================================================
 // CONFIGURATION CONSTANTS
@@ -85,13 +58,7 @@ SMTPSession smtp;
 static const char* DEFAULT_AP_SSID = "ESP32-AccessPoint";  // Default AP name
 static const char* DEFAULT_AP_PASS = "12345678";           // Default AP password (>= 8 chars)
 
-/**
- * @brief Default Email configuration
- * These values are used when no custom email configuration is saved
- */
-static const char* DEFAULT_SMTP_HOST = "smtp.gmail.com";   // Default SMTP server
-static const int DEFAULT_SMTP_PORT = 465;                  // Default SMTP port (SSL)
-static const char* DEFAULT_SENDER_NAME = "ESP32 Dashboard"; // Default sender name
+
 
 /**
  * @brief Configuration file paths in SPIFFS
@@ -100,42 +67,7 @@ static const char* DEFAULT_SENDER_NAME = "ESP32 Dashboard"; // Default sender na
 static const char* WIFI_FILE = "/wifi.json";   // WiFi configuration (AP and Station settings)
 static const char* GSM_FILE  = "/gsm.json";    // GSM modem configuration (APN, carrier settings)
 static const char* USER_FILE = "/user.json";   // User profile data (name, email, phone)
-static const char* EMAIL_FILE = "/email.json"; // Email configuration (SMTP settings)
 
-// ============================================================================
-// DRD (DEVICE RESET DETECTION) CONFIGURATION
-// ============================================================================
-
-/**
- * @brief DRD button configuration
- * Button connected between 5V and GPIO26 for device reset detection
- */
-#define DRD_BUTTON_PIN 26        // GPIO pin for DRD button
-#define DRD_DEBOUNCE_TIME 50     // Debounce time in milliseconds
-#define DRD_DOUBLE_PRESS_TIME 5000 // Time window for double press detection (5 seconds)
-#define DRD_HOLD_TIME 2000       // Time for long press detection (2 seconds)
-
-/**
- * @brief DRD button states for state machine
- */
-enum DRDButtonState {
-  DRD_IDLE,           // Button not pressed
-  DRD_PRESSED,        // Button pressed, waiting for debounce
-  DRD_HELD,           // Button held for long press
-  DRD_RELEASED        // Button released, waiting for debounce
-};
-
-/**
- * @brief DRD state variables with enhanced debouncing
- * These variables track the button press state and timing for robust detection
- */
-volatile DRDButtonState drdButtonState = DRD_IDLE;     // Current button state
-volatile unsigned long drdStateChangeTime = 0;          // Time of last state change
-volatile unsigned long drdPressStartTime = 0;          // Time when press started
-volatile unsigned long drdLastPressTime = 0;           // Timestamp of last complete press
-volatile int drdPressCount = 0;                        // Number of presses in current window
-volatile bool drdConfigMode = false;                   // Current mode: false=dashboard, true=config
-volatile bool drdLongPressDetected = false;            // Flag for long press detection
 
 // ============================================================================
 // HARDWARE CONFIGURATION
@@ -175,7 +107,7 @@ GSM_Test gsmModem(Serial2, MODEM_RX, MODEM_TX, 115200);
  */
 struct GSMCache {
   // Signal strength and quality data
-  int signalStrength = -999;    // Signal strength in dBm (-113 to -51)
+  int signalStrength = 0;    // Signal strength in dBm (-113 to -51) 999
   int signalQuality = 99;       // Signal quality (0-31 scale)
   String grade = "Unknown";     // Human-readable signal grade (Excellent/Good/Fair/Poor)
   
@@ -208,7 +140,7 @@ struct GSMCache {
   void updateSignal(bool forceRefresh = false) {
     if (needsUpdate(forceRefresh)) {
       signalStrength = gsmModem.getSignalStrength();
-      if (signalStrength != -999) {
+      if (signalStrength != 0) {
         // Convert dBm to 0-31 quality scale
         signalQuality = (signalStrength + 113) / 2;
         if (signalQuality < 0) signalQuality = 0;
@@ -487,80 +419,7 @@ struct UserConfig {
   }
 } userCfg;
 
-/**
- * @brief Email configuration management structure
- * 
- * Handles storage and retrieval of email settings including:
- * - SMTP server host and port
- * - Email account credentials
- * - Sender name and email address
- * 
- * Configuration is stored as JSON in SPIFFS filesystem for persistence.
- */
-struct EmailConfig {
-  String smtpHost;        // SMTP server host (e.g., "smtp.gmail.com")
-  int smtpPort;           // SMTP server port (e.g., 465 for SSL)
-  String emailAccount;    // Email address for sending
-  String emailPassword;   // App password for email account
-  String senderName;      // Display name for sender
-  
-  /**
-   * @brief Load email configuration from SPIFFS
-   * @return true if configuration loaded successfully, false otherwise
-   * 
-   * Attempts to read email configuration from /email.json file.
-   * If file doesn't exist or is corrupted, returns false and uses defaults.
-   */
-  bool load() {
-    if (!SPIFFS.exists(EMAIL_FILE)) return false;
-    File f = SPIFFS.open(EMAIL_FILE, "r"); 
-    if (!f) return false;
-    
-    DynamicJsonDocument doc(1024); 
-    if (deserializeJson(doc, f)) { 
-      f.close(); 
-      return false; 
-    }
-    f.close();
-    
-    // Load configuration with defaults
-    smtpHost = doc["smtpHost"] | DEFAULT_SMTP_HOST;
-    smtpPort = doc["smtpPort"] | DEFAULT_SMTP_PORT;
-    emailAccount = doc["emailAccount"] | "";
-    emailPassword = doc["emailPassword"] | "";
-    senderName = doc["senderName"] | DEFAULT_SENDER_NAME;
-    return true;
-  }
-  
-  /**
-   * @brief Save email configuration to SPIFFS
-   * @return true if configuration saved successfully, false otherwise
-   * 
-   * Writes current email configuration to /email.json file.
-   */
-  bool save() const {
-    DynamicJsonDocument doc(1024);
-    doc["smtpHost"] = smtpHost;
-    doc["smtpPort"] = smtpPort;
-    doc["emailAccount"] = emailAccount;
-    doc["emailPassword"] = emailPassword;
-    doc["senderName"] = senderName;
-    
-    File f = SPIFFS.open(EMAIL_FILE, "w"); 
-    if (!f) return false;
-    serializeJson(doc, f); 
-    f.close(); 
-    return true;
-  }
-  
-  /**
-   * @brief Check if email configuration is valid
-   * @return true if all required fields are populated
-   */
-  bool isValid() const {
-    return smtpHost.length() > 0 && emailAccount.length() > 0 && emailPassword.length() > 0;
-  }
-} emailCfg;
+
 
 // ============================================================================
 // WIFI MANAGEMENT FUNCTIONS
@@ -643,112 +502,6 @@ const char* rssiToStrength(int rssi) {
   return "weak";
 }
 
-// ============================================================================
-// EMAIL MANAGEMENT FUNCTIONS
-// ============================================================================
-
-/**
- * @brief Send email using WiFi SMTP settings
- * @param toEmail Recipient email address
- * @param subject Email subject line
- * @param content Email body content
- * @return true if email sent successfully, false otherwise
- * 
- * @details
- * This function sends an email using the ESP Mail Client library (WiFi).
- * It uses the configured SMTP settings and handles connection errors.
- * 
- * @note For Gmail, you need to use an App Password instead of your regular password.
- * Enable 2-factor authentication and generate an App Password in your Google account.
- */
-bool sendEmailWiFi(const String& toEmail, const String& subject, const String& content) {
-  // Check if email configuration is valid
-  if (!emailCfg.isValid()) {
-    Serial.println("WiFi Email configuration incomplete");
-    return false;
-  }
-
-  // Configure SMTP session
-  ESP_Mail_Session session;
-  session.server.host_name = emailCfg.smtpHost.c_str();
-  session.server.port = emailCfg.smtpPort;
-  session.login.email = emailCfg.emailAccount.c_str();
-  session.login.password = emailCfg.emailPassword.c_str();
-  session.login.user_domain = "";
-
-  // Configure email message
-  SMTP_Message mail;
-  mail.sender.name = emailCfg.senderName.c_str();
-  mail.sender.email = emailCfg.emailAccount.c_str();
-  mail.subject = subject.c_str();
-  mail.addRecipient("Recipient", toEmail.c_str());
-  mail.text.content = content.c_str();
-
-  // Attempt to send email
-  Serial.println("Attempting to send email via WiFi...");
-  
-  if (!smtp.connect(&session)) {
-    Serial.println("Could not connect to SMTP server (WiFi)");
-    return false;
-  }
-  
-  if (!MailClient.sendMail(&smtp, &mail)) {
-    Serial.println("Email sending failed (WiFi)");
-    return false;
-  }
-  
-  Serial.println("Email sent successfully via WiFi!");
-  return true;
-}
-
-/**
- * @brief Send email using GSM SMTP settings
- * @param toEmail Recipient email address
- * @param subject Email subject line
- * @param content Email body content
- * @return true if email sent successfully, false otherwise
- * 
- * @details
- * This function sends an email using the GSM modem's built-in SMTP client.
- * It uses the same credentials as WiFi email but routes through GSM data connection.
- * Requires APN="internet" configuration.
- */
-bool sendEmailGSM(const String& toEmail, const String& subject, const String& content) {
-  Serial.println("Attempting to send email via GSM...");
-  
-  // Check if email configuration is valid
-  if (!emailCfg.isValid()) {
-    Serial.println("GSM Email configuration incomplete");
-    return false;
-  }
-  
-  // Initialize GSM SMTP client with APN="internet"
-  if (!gsmModem.initSMTP("internet")) {
-    Serial.println("Failed to initialize GSM SMTP client");
-    return false;
-  }
-  
-  // Configure GSM SMTP with same credentials as WiFi
-  if (!gsmModem.configSMTP(emailCfg.smtpHost.c_str(), 
-                          emailCfg.smtpPort, 
-                          emailCfg.emailAccount.c_str(), 
-                          emailCfg.emailPassword.c_str(), 
-                          emailCfg.senderName.c_str())) {
-    Serial.println("Failed to configure GSM SMTP");
-    return false;
-  }
-  
-  // Send email via GSM
-  bool success = gsmModem.sendEmailViaGSM(toEmail, subject, content);
-  
-  if (success) {
-    Serial.println("Email sent successfully via GSM!");
-  } else {
-    Serial.println("Email sending failed via GSM");
-  }
-  
-  return success;
-}
 
 // ============================================================================
 // JSON RESPONSE BUILDERS
@@ -798,15 +551,16 @@ String buildStatusJson() {
     sta["status"] = "Not connected"; 
     sta["statusClass"] = "status-disconnected"; 
   }
-
+/*
   // Email configuration status
   JsonObject email = doc.createNestedObject("email");
   email["configured"] = emailCfg.isValid();
   email["account"] = emailCfg.emailAccount;
-
+*/
   String out; 
   serializeJson(doc, out); 
   return out;
+  
 }
 
 // ============================================================================
@@ -914,17 +668,9 @@ void handleRoot() {
     return;
   }
   
-  // Serve different interfaces based on DRD mode
+  // Serve the main dashboard for all other requests
   addCORS();
-  if (drdConfigMode) {
-    // Serve configuration mode interface
-    Serial.println("Serving Configuration Mode interface");
-    server.send_P(200, "text/html", config_html, config_html_len);
-  } else {
-    // Serve normal dashboard interface
-    Serial.println("Serving Dashboard Mode interface");
-    server.send_P(200, "text/html", dashboard_html, dashboard_html_len);
-  }
+  server.send_P(200, "text/html", dashboard_html, dashboard_html_len);
 }
 
 /**
@@ -972,504 +718,6 @@ void handleNotFound() {
 }
 
 // ============================================================================
-// EMAIL API HANDLERS
-// ============================================================================
-
-/**
- * @brief Handle email configuration load requests
- */
-void handleEmailLoad() {
-  DynamicJsonDocument doc(1024);
-  doc["smtpHost"] = emailCfg.smtpHost;
-  doc["smtpPort"] = emailCfg.smtpPort;
-  doc["emailAccount"] = emailCfg.emailAccount;
-  doc["senderName"] = emailCfg.senderName;
-  // Note: Password is not returned for security reasons
-  
-  String out; 
-  serializeJson(doc, out);
-  sendJson(200, out);
-}
-
-/**
- * @brief Handle email configuration save requests
- */
-void handleEmailSave() {
-  // Validate request body
-  if (!server.hasArg("plain")) { 
-    sendText(400, "Invalid JSON"); 
-    return; 
-  }
-  
-  // Parse JSON request
-  DynamicJsonDocument doc(1024);
-  if (deserializeJson(doc, server.arg("plain"))) { 
-    sendText(400, "Invalid JSON"); 
-    return; 
-  }
-  
-  // Update email configuration from request
-  emailCfg.smtpHost = doc["smtpHost"] | DEFAULT_SMTP_HOST;
-  emailCfg.smtpPort = doc["smtpPort"] | DEFAULT_SMTP_PORT;
-  emailCfg.emailAccount = doc["emailAccount"] | "";
-  emailCfg.emailPassword = doc["emailPassword"] | "";
-  emailCfg.senderName = doc["senderName"] | DEFAULT_SENDER_NAME;
-  
-  // Save configuration to SPIFFS
-  bool ok = emailCfg.save();
-
-  // Log email configuration save
-  Serial.print("Email configuration saved: ");
-  Serial.print(emailCfg.emailAccount);
-  Serial.print(", ");
-  Serial.println(emailCfg.smtpHost);
-
-  // Return response
-  DynamicJsonDocument resp(256);
-  resp["success"] = ok;
-  if (ok) {
-    resp["message"] = "Email configuration saved successfully";
-  } else {
-    resp["message"] = "Failed to save email configuration";
-  }
-  
-  String out; 
-  serializeJson(resp, out);
-  sendJson(ok ? 200 : 500, out);
-}
-
-/**
- * @brief Handle test email sending requests
- */
-void handleEmailSend() {
-  // Validate request body
-  if (!server.hasArg("plain")) { 
-    sendText(400, "Invalid JSON"); 
-    return; 
-  }
-  
-  // Parse JSON request
-  DynamicJsonDocument doc(512);
-  if (deserializeJson(doc, server.arg("plain"))) { 
-    sendText(400, "Invalid JSON"); 
-    return; 
-  }
-  
-  // Extract email parameters
-  String toEmail = doc["to"] | "";
-  String subject = doc["subject"] | "Test Email from ESP32 Dashboard";
-  String content = doc["content"] | "This is a test email sent from your ESP32 IoT Configuration Panel.";
-  
-  // Validate required parameters
-  if (!toEmail.length()) { 
-    sendText(400, "Recipient email required"); 
-    return; 
-  }
-
-  // Check if email configuration is valid
-  if (!emailCfg.isValid()) {
-    sendText(400, "Email configuration incomplete. Please configure SMTP settings first.");
-    return;
-  }
-  
-  // Log email attempt
-  Serial.print("Sending test email to: ");
-  Serial.println(toEmail);
-  Serial.print("Subject: ");
-  Serial.println(subject);
-  
-  // Send email via SMTP (WiFi)
-  bool success = sendEmailWiFi(toEmail, subject, content);
-  
-  // Build response
-  DynamicJsonDocument resp(256);
-  resp["success"] = success;
-  if (success) {
-    resp["message"] = "Test email sent successfully";
-  } else {
-    resp["error"] = "Failed to send test email. Check SMTP configuration and network connection.";
-  }
-  
-  String out; 
-  serializeJson(resp, out);
-  sendJson(success ? 200 : 500, out);
-}
-
-/**
- * @brief Handle simple dummy email sending (legacy endpoint)
- */
-void handleDummyEmail() {
-  String toEmail = server.arg("to");
-  String response;
-
-  if (toEmail.isEmpty()) {
-    server.send(400, "application/json", "{\"message\":\"Email is empty!\"}");
-    return;
-  }
-
-  // Check if email configuration is valid
-  if (!emailCfg.isValid()) {
-    response = "{\"message\":\"Email configuration incomplete!\"}";
-    server.send(400, "application/json", response);
-    return;
-  }
-
-  // Send test email via WiFi
-  bool success = sendEmailWiFi(toEmail, 
-                              "Dummy Test Email from ESP32", 
-                              "This is a dummy test email sent from your ESP32 IoT Configuration Panel.");
-
-  if (success) {
-    response = "{\"message\":\"Email sent successfully!\"}";
-  } else {
-    response = "{\"message\":\"Email sending failed!\"}";
-  }
-
-  server.send(200, "application/json", response);
-}
-
-// ============================================================================
-// CONFIGURATION MODE API HANDLERS (for config_html.h)
-// ============================================================================
-
-// Forward declaration
-String getCurrentTimeString();
-
-/**
- * @brief Handle Access Point configuration save
- * 
- * @details
- * Saves Access Point SSID and password configuration to SPIFFS.
- * Validates input parameters and updates the WiFi configuration.
- */
-void handleConfigApSave() {
-  addCORS();
-  
-  if (!server.hasArg("plain")) {
-    sendJson(400, "{\"success\":false,\"message\":\"Invalid JSON\"}");
-    return;
-  }
-  
-  DynamicJsonDocument doc(1024);
-  DeserializationError error = deserializeJson(doc, server.arg("plain"));
-  
-  if (error) {
-    sendJson(400, "{\"success\":false,\"message\":\"Invalid JSON format\"}");
-    return;
-  }
-  
-  String apSsid = doc["apSsid"].as<String>();
-  String apPass = doc["apPass"].as<String>();
-  
-  // Validate SSID length
-  if (apSsid.length() > 32) {
-    sendJson(400, "{\"success\":false,\"message\":\"SSID must be at most 32 characters\"}");
-    return;
-  }
-  
-  // Validate password length
-  if (apPass.length() > 0 && (apPass.length() < 8 || apPass.length() > 63)) {
-    sendJson(400, "{\"success\":false,\"message\":\"Password must be 8-63 characters or empty\"}");
-    return;
-  }
-  
-  // Update WiFi configuration
-  wifiCfg.apSsid = apSsid;
-  wifiCfg.apPass = apPass;
-  
-  // Save to SPIFFS
-  bool success = wifiCfg.save();
-  
-  DynamicJsonDocument response(512);
-  response["success"] = success;
-  response["message"] = success ? "AP configuration saved successfully" : "Failed to save AP configuration";
-  response["apSsid"] = apSsid;
-  response["apPass"] = apPass.length() > 0 ? "[SET]" : "";
-  response["lastSaved"] = success ? getCurrentTimeString() : "";
-  
-  String out;
-  serializeJson(response, out);
-  sendJson(success ? 200 : 500, out);
-}
-
-/**
- * @brief Handle Access Point configuration apply
- * 
- * @details
- * Applies the saved Access Point configuration by restarting the AP.
- * This will change the SSID and password of the Access Point.
- */
-void handleConfigApApply() {
-  addCORS();
-  
-  // Restart Access Point with current configuration
-  String apSsid = wifiCfg.apSsid.length() ? wifiCfg.apSsid : DEFAULT_AP_SSID;
-  String apPass = wifiCfg.apPass.length() ? wifiCfg.apPass : DEFAULT_AP_PASS;
-  
-  Serial.println("Applying AP configuration: SSID=" + apSsid + ", Password=" + (apPass.length() > 0 ? "[SET]" : "[OPEN]"));
-  
-  // Stop current AP
-  WiFi.softAPdisconnect(true);
-  delay(1000);
-  
-  // Start new AP
-  bool success = WiFi.softAP(apSsid, apPass);
-  
-  DynamicJsonDocument response(512);
-  response["success"] = success;
-  response["message"] = success ? "AP configuration applied successfully" : "Failed to apply AP configuration";
-  response["apSsid"] = apSsid;
-  response["apPass"] = apPass.length() > 0 ? "[SET]" : "";
-  response["apIp"] = success ? WiFi.softAPIP().toString() : "";
-  
-  String out;
-  serializeJson(response, out);
-  sendJson(success ? 200 : 500, out);
-}
-
-/**
- * @brief Handle Access Point configuration load
- * 
- * @details
- * Returns the current Access Point configuration including SSID, password status,
- * and last saved timestamp.
- */
-void handleConfigApLoad() {
-  addCORS();
-  
-  DynamicJsonDocument response(512);
-  response["success"] = true;
-  response["apSsid"] = wifiCfg.apSsid;
-  response["apPass"] = wifiCfg.apPass.length() > 0 ? "[SET]" : "";
-  response["lastSaved"] = getCurrentTimeString();
-  
-  String out;
-  serializeJson(response, out);
-  sendJson(200, out);
-}
-
-/**
- * @brief Get current time as formatted string
- * 
- * @details
- * Returns current time in a readable format for timestamps.
- */
-String getCurrentTimeString() {
-  return String(millis() / 1000) + "s uptime";
-}
-
-// ============================================================================
-// DRD (DEVICE RESET DETECTION) FUNCTIONS
-// ============================================================================
-
-// Forward declaration
-void processButtonPress(unsigned long currentTime);
-
-/**
- * @brief DRD button interrupt handler with enhanced debouncing
- * 
- * @details
- * This interrupt handler implements a state machine for robust button detection.
- * It handles debouncing, press/release detection, and long press detection.
- * The interrupt is triggered on both rising and falling edges for complete detection.
- */
-void IRAM_ATTR drdButtonISR() {
-  static unsigned long lastInterruptTime = 0;
-  unsigned long interruptTime = millis();
-  
-  // Basic hardware debounce: ignore interrupts that occur too quickly
-  if (interruptTime - lastInterruptTime > 10) { // 10ms hardware debounce
-    bool currentState = digitalRead(DRD_BUTTON_PIN);
-    
-    // Update state change time
-    drdStateChangeTime = interruptTime;
-    
-    if (currentState == HIGH) { // Button pressed (5V connected to GPIO26)
-      if (drdButtonState == DRD_IDLE) {
-        drdButtonState = DRD_PRESSED;
-        drdPressStartTime = interruptTime;
-        Serial.println("DRD Interrupt: Button PRESSED (state: IDLE->PRESSED)");
-      }
-    } else { // Button released (GPIO26 floating or grounded)
-      if (drdButtonState == DRD_PRESSED || drdButtonState == DRD_HELD) {
-        String oldState = (drdButtonState == DRD_PRESSED) ? "PRESSED" : "HELD";
-        drdButtonState = DRD_RELEASED;
-        Serial.println("DRD Interrupt: Button RELEASED (state: " + oldState + "->RELEASED)");
-      }
-    }
-    
-    lastInterruptTime = interruptTime;
-  }
-}
-
-/**
- * @brief Enhanced DRD state machine with soft debouncing
- * 
- * @details
- * This function implements a complete state machine for button detection with:
- * - Soft debouncing using state transitions
- * - Press and release detection
- * - Long press detection (2+ seconds)
- * - Double-press detection within 5-second window
- * - Automatic state resets and timeouts
- * 
- * Should be called regularly from the main loop (every 10-50ms recommended).
- */
-void checkDRD() {
-  static unsigned long lastCheckTime = 0;
-  unsigned long currentTime = millis();
-  
-  // Check every 20ms for responsive detection
-  if (currentTime - lastCheckTime < 20) {
-    return;
-  }
-  lastCheckTime = currentTime;
-  
-  // State machine implementation
-  switch (drdButtonState) {
-    
-    case DRD_IDLE:
-      // Button is not pressed, waiting for press
-      break;
-      
-    case DRD_PRESSED:
-      // Button pressed, check if debounce time has passed
-      if (currentTime - drdStateChangeTime >= DRD_DEBOUNCE_TIME) {
-        // Verify button is still pressed (soft debounce)
-        if (digitalRead(DRD_BUTTON_PIN) == HIGH) {
-          // Confirmed press - check for long press
-          if (currentTime - drdPressStartTime >= DRD_HOLD_TIME) {
-            drdButtonState = DRD_HELD;
-            drdLongPressDetected = true;
-            Serial.println("DRD State: PRESSED->HELD (Long press detected " + String(DRD_HOLD_TIME/1000) + "s)");
-          }
-          // Stay in PRESSED state for short presses
-        } else {
-          // Button released during debounce - ignore this press
-          drdButtonState = DRD_IDLE;
-          Serial.println("DRD State: PRESSED->IDLE (Press ignored - debounce)");
-        }
-      }
-      break;
-      
-    case DRD_HELD:
-      // Button held for long press, wait for release
-      if (digitalRead(DRD_BUTTON_PIN) == LOW) {
-        // Button released, start release debounce
-        drdButtonState = DRD_RELEASED;
-        drdStateChangeTime = currentTime;
-        Serial.println("DRD Long press released");
-      }
-      break;
-      
-    case DRD_RELEASED:
-      // Button released, check if debounce time has passed
-      if (currentTime - drdStateChangeTime >= DRD_DEBOUNCE_TIME) {
-        // Verify button is still released (soft debounce)
-        if (digitalRead(DRD_BUTTON_PIN) == LOW) {
-          // Confirmed release - process the press
-          Serial.println("DRD State: RELEASED->IDLE (Processing press)");
-          processButtonPress(currentTime);
-        } else {
-          // Button pressed again during debounce - ignore release
-          drdButtonState = DRD_IDLE;
-          Serial.println("DRD State: RELEASED->IDLE (Release ignored - debounce)");
-        }
-      }
-      break;
-  }
-  
-  // Handle press count timeout - reset after 2 seconds for single press
-  if (drdPressCount > 0 && (currentTime - drdLastPressTime) > 2000) {
-    if (drdPressCount == 1) {
-      Serial.println("DRD Single press timeout - resetting count");
-    } else {
-      Serial.println("DRD Timeout - resetting press count (" + String(drdPressCount) + " presses)");
-    }
-    drdPressCount = 0;
-  }
-}
-
-/**
- * @brief Process a confirmed button press with simplified double-press detection
- * 
- * @details
- * This function handles the logic for processing a confirmed button press.
- * It manages press counting and double-press detection with simplified timing.
- * 
- * @param currentTime Current timestamp for timing calculations
- */
-void processButtonPress(unsigned long currentTime) {
-  // Reset to idle state
-  drdButtonState = DRD_IDLE;
-  
-  // Increment press count
-  drdPressCount++;
-  drdLastPressTime = currentTime;
-  
-  Serial.println("DRD Button press confirmed - Count: " + String(drdPressCount));
-  
-  // Check for double press immediately
-  if (drdPressCount >= 2) {
-    // Double press detected - switch modes
-    drdConfigMode = !drdConfigMode;
-    
-    Serial.println("DRD Double-press detected! Switching to " + 
-                  String(drdConfigMode ? "Configuration" : "Dashboard") + " mode");
-    
-    // Reset press count
-    drdPressCount = 0;
-    
-    // Optional: Add visual feedback (LED blink, etc.)
-    // digitalWrite(LED_PIN, HIGH);
-    // delay(200);
-    // digitalWrite(LED_PIN, LOW);
-    
-  } else if (drdPressCount == 1) {
-    // Single press - check if it was a long press
-    if (drdLongPressDetected) {
-      Serial.println("DRD Long press detected - could be used for factory reset");
-      // Future: Implement factory reset functionality
-      drdLongPressDetected = false;
-    } else {
-      Serial.println("DRD Single press detected - waiting for potential second press");
-    }
-  }
-}
-
-/**
- * @brief Initialize DRD button and interrupt with enhanced features
- * 
- * @details
- * Sets up the DRD button pin with pull-up resistor and configures the interrupt
- * to trigger on both rising and falling edges for complete press detection.
- * Initializes the state machine and all timing variables.
- */
-void initDRD() {
-  // Configure button pin as input (button connects 5V to GPIO26)
-  pinMode(DRD_BUTTON_PIN, INPUT);
-  
-  // Initialize state machine variables
-  drdButtonState = DRD_IDLE;
-  drdStateChangeTime = 0;
-  drdPressStartTime = 0;
-  drdLastPressTime = 0;
-  drdPressCount = 0;
-  drdConfigMode = false;
-  drdLongPressDetected = false;
-  
-  // Attach interrupt for both rising and falling edges
-  attachInterrupt(digitalPinToInterrupt(DRD_BUTTON_PIN), drdButtonISR, CHANGE);
-  
-  Serial.println("DRD Enhanced System initialized on GPIO" + String(DRD_BUTTON_PIN));
-  Serial.println("Button wiring: 5V -> Button -> GPIO26 (HIGH when pressed)");
-  Serial.println("Features: Soft debouncing, Long press detection, Double-press switching");
-  Serial.println("Timing: " + String(DRD_DEBOUNCE_TIME) + "ms debounce, " + 
-                String(DRD_HOLD_TIME/1000) + "s long press, " + 
-                String(DRD_DOUBLE_PRESS_TIME/1000) + "s double-press window");
-}
-
-// ============================================================================
 // MAIN APPLICATION SETUP
 // ============================================================================
 
@@ -1485,7 +733,6 @@ void initDRD() {
  * 5. WiFi Station mode connection attempt
  * 6. GSM modem initialization
  * 7. Web server and API endpoint configuration
- * 8. DRD (Device Reset Detection) initialization
  * 
  * The function sets up both WiFi modes (AP+STA) and initializes the GSM modem
  * for dual-mode operation. All configuration is loaded from SPIFFS files.
@@ -1507,10 +754,7 @@ void setup() {
   wifiCfg.load(); 
   gsmCfg.load(); 
   userCfg.load();
-  emailCfg.load();  // Load email configuration
-
-  // Initialize DRD (Device Reset Detection) system
-  initDRD();
+  //emailCfg.load();  // Load email configuration
 
   // Start Access Point with saved or default configuration
   String apSsid = wifiCfg.apSsid.length() ? wifiCfg.apSsid : DEFAULT_AP_SSID;
@@ -1592,65 +836,59 @@ void setup() {
 
   // WiFi network scanning API endpoint
   server.on("/api/wifi/scan", HTTP_GET, []() {
-    Serial.println("Starting WiFi scan...");
-    int n = WiFi.scanNetworks(false, true);
-    Serial.print("Found ");
-    Serial.print(n);
-    Serial.println(" networks");
+  Serial.println("Starting WiFi scan...");
 
-    // Create JSON document for network list
-    DynamicJsonDocument doc(8192);
-    
-    // Structure to hold network information
-    struct Row { 
-      String ssid; 
-      int rssi; 
-      int channel; 
-      wifi_auth_mode_t auth; 
-    };
-    
-    // Collect and deduplicate networks (keep strongest signal for each SSID)
-    std::vector<Row> rows; 
-    rows.reserve(n);
-    
-    for (int i = 0; i < n; i++) {
-      Row r{ WiFi.SSID(i), WiFi.RSSI(i), WiFi.channel(i), WiFi.encryptionType(i) };
-      if (r.ssid.length() == 0) continue; // Skip empty SSIDs
-      
-      // Check if this SSID already exists and replace if signal is stronger
-      bool replaced = false;
-      for (auto &e : rows) { 
-        if (e.ssid == r.ssid) { 
-          if (r.rssi > e.rssi) e = r; 
-          replaced = true; 
-          break; 
-        } 
-      }
-      if (!replaced) rows.push_back(r);
-    }
-    
-    // Sort networks by signal strength (strongest first)
-    std::sort(rows.begin(), rows.end(), [](const Row&a, const Row&b){ 
-      return a.rssi > b.rssi; 
-    });
+  WiFi.scanDelete();  // clear previous results
 
-    // Build JSON response
-    JsonArray arr = doc.to<JsonArray>();
-    for (auto &r : rows) {
-      JsonObject o = arr.add<JsonObject>();
-      o["ssid"]     = r.ssid;
-      o["rssi"]     = r.rssi;
-      o["channel"]  = r.channel;
-      o["auth"]     = (int)r.auth;
-      o["security"] = (r.auth == WIFI_AUTH_OPEN) ? "Open" : "Secure";
-      o["strength"] = rssiToStrength(r.rssi);
+  // Start async scan
+  int n = WiFi.scanNetworks(true, false);  // async = true
+  if (n == WIFI_SCAN_RUNNING) {
+    Serial.println("Scan started asynchronously...");
+  } else if (n < 0) {
+    Serial.printf("Scan start failed: %d\n", n);
+    sendJson(500, "{\"error\":\"Scan start failed\"}");
+    return;
+  }
+
+  // Wait for completion (non-blocking version possible too)
+  unsigned long start = millis();
+  while (WiFi.scanComplete() == WIFI_SCAN_RUNNING) {
+    delay(100);
+    if (millis() - start > 6000) { // timeout
+      sendJson(500, "{\"error\":\"Scan timeout\"}");
+      return;
     }
-    
-    String out; 
-    serializeJson(doc, out);
-    sendJson(200, out);
-  });
+  }
+
+  n = WiFi.scanComplete();
+  Serial.printf("Found %d networks\n", n);
+
+  if (n <= 0) {
+    sendJson(200, "[]");
+    WiFi.scanDelete();
+    return;
+  }
+
+  DynamicJsonDocument doc(4096);
+  JsonArray arr = doc.to<JsonArray>();
+
+  for (int i = 0; i < n; i++) {
+    JsonObject o = arr.add<JsonObject>();
+    o["ssid"] = WiFi.SSID(i);
+    o["rssi"] = WiFi.RSSI(i);
+    o["channel"] = WiFi.channel(i);
+    o["auth"] = (int)WiFi.encryptionType(i);
+    o["security"] = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "Open" : "Secure";
+  }
+
+  String out;
+  serializeJson(arr, out);
+  WiFi.scanDelete(); // free memory
+  sendJson(200, out);
+});
+
   server.on("/api/wifi/scan", HTTP_OPTIONS, handleOptions);
+
 
   // WiFi connection API endpoint
   server.on("/api/wifi/connect", HTTP_POST, []() {
@@ -2032,97 +1270,6 @@ void setup() {
   });
   server.on("/api/gsm/call", HTTP_OPTIONS, handleOptions);
 
-  // ============================================================================
-  // EMAIL API ENDPOINTS
-  // ============================================================================
-
-  // Email configuration load API endpoint
-  server.on("/api/load/email", HTTP_GET, handleEmailLoad);
-  server.on("/api/load/email", HTTP_OPTIONS, handleOptions);
-
-  // Email configuration save API endpoint
-  server.on("/api/save/email", HTTP_POST, handleEmailSave);
-  server.on("/api/save/email", HTTP_OPTIONS, handleOptions);
-
-  // Email test send API endpoint
-  server.on("/api/email/send", HTTP_POST, handleEmailSend);
-  server.on("/api/email/send", HTTP_OPTIONS, handleOptions);
-
-  // Legacy dummy email endpoint (for compatibility)
-  server.on("/sendDummyEmail", HTTP_GET, handleDummyEmail);
-  server.on("/sendDummyEmail", HTTP_OPTIONS, handleOptions);
-
-  // GSM Email API endpoints
-  server.on("/api/email/gsm/send", HTTP_POST, []() {
-    // Validate request body
-    if (!server.hasArg("plain")) { 
-      sendText(400, "Invalid JSON"); 
-      return; 
-    }
-    
-    // Parse JSON request
-    DynamicJsonDocument doc(512);
-    if (deserializeJson(doc, server.arg("plain"))) { 
-      sendText(400, "Invalid JSON"); 
-      return; 
-    }
-    
-    // Extract email parameters
-    String toEmail = doc["to"] | "";
-    String subject = doc["subject"] | "Test Email via GSM from ESP32 Dashboard";
-    String content = doc["content"] | "This is a test email sent via GSM from your ESP32 IoT Configuration Panel.";
-    
-    // Validate required parameters
-    if (!toEmail.length()) { 
-      sendText(400, "Recipient email required"); 
-      return; 
-    }
-
-    // Check if email configuration is valid
-    if (!emailCfg.isValid()) {
-      sendText(400, "Email configuration incomplete. Please configure SMTP settings first.");
-      return;
-    }
-    
-    // Log GSM email attempt
-    Serial.print("Sending GSM email to: ");
-    Serial.println(toEmail);
-    Serial.print("Subject: ");
-    Serial.println(subject);
-    
-    // Send email via GSM SMTP
-    bool success = sendEmailGSM(toEmail, subject, content);
-    
-    // Build response
-    DynamicJsonDocument resp(256);
-    resp["success"] = success;
-    if (success) {
-      resp["message"] = "GSM email sent successfully";
-      resp["method"] = "GSM";
-    } else {
-      resp["error"] = "Failed to send email via GSM. Check GSM network connection and SMTP configuration.";
-      resp["method"] = "GSM";
-    }
-    
-    String out; 
-    serializeJson(resp, out);
-    sendJson(success ? 200 : 500, out);
-  });
-  server.on("/api/email/gsm/send", HTTP_OPTIONS, handleOptions);
-
-  // ============================================================================
-  // CONFIGURATION MODE API ENDPOINTS (for config_html.h)
-  // ============================================================================
-
-  // Access Point configuration endpoints
-  server.on("/api/config/ap/save", HTTP_POST, handleConfigApSave);
-  server.on("/api/config/ap/save", HTTP_OPTIONS, handleOptions);
-  server.on("/api/config/ap/apply", HTTP_POST, handleConfigApApply);
-  server.on("/api/config/ap/apply", HTTP_OPTIONS, handleOptions);
-  server.on("/api/config/ap/load", HTTP_GET, handleConfigApLoad);
-  server.on("/api/config/ap/load", HTTP_OPTIONS, handleOptions);
-
-
   // User profile load API endpoint
   server.on("/api/load/user", HTTP_GET, []() {
     // Build JSON response with current user configuration
@@ -2250,9 +1397,6 @@ void loop() {
   // Handle web server client requests
   server.handleClient();
 
-  // Check for DRD (Device Reset Detection) button presses
-  checkDRD();
-
   // Periodic status logging every 30 seconds
   static unsigned long lastStatusPrint = 0;
   if (millis() - lastStatusPrint > 30000) {
@@ -2265,7 +1409,7 @@ void loop() {
     } else {
       Serial.print("Not connected");
     }
-    Serial.print(", Email: ");
-    Serial.println(emailCfg.isValid() ? "Configured" : "Not configured");
+   // Serial.print(", Email: ");
+   // Serial.println(emailCfg.isValid() ? "Configured" : "Not configured");
   }
 }
