@@ -1,46 +1,8 @@
-/**
- * @file config_html.h
- * @brief Configuration Mode Web Interface for ESP32 IoT Configuration Panel
- * @author IoT Device Dashboard Project
- * @version 2.0.0
- * @date 2025-01-30
- * 
- * @details
- * This file contains the configuration mode web interface that is displayed
- * when the DRD (Device Reset Detection) system detects 2 button presses
- * within a 5-second interval. This interface provides a simplified
- * configuration experience for device setup and recovery.
- * 
- * @section features Configuration Mode Features
- * - Modern FOTA Dashboard UI design
- * - Firmware and Access Point configuration
- * - Real-time status monitoring
- * - Export/Import settings functionality
- * - Mobile-friendly responsive design
- * 
- * @section design Design Features
- * - Clean, minimal interface focused on configuration
- * - Dark theme with professional styling
- * - Tab-based organization for different settings
- * - Real-time validation and feedback
- * - Responsive design for mobile devices
- */
-
 #ifndef CONFIG_HTML_H
 #define CONFIG_HTML_H
+#include <Arduino.h>
 
-/**
- * @brief Configuration mode web interface HTML/CSS/JavaScript
- * 
- * This PROGMEM string contains the configuration mode interface including:
- * - HTML structure optimized for configuration tasks
- * - CSS styling with modern dark theme
- * - JavaScript functionality for configuration management
- * - Firmware and Access Point configuration
- * - Settings export/import capabilities
- * - Real-time validation and feedback
- */
-const char config_html[] = R"rawliteral(
+const char config_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -276,10 +238,17 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
       <h1>ESP32 Configuration</h1>
       <p>Access-Point Configuration</p>
     </div>
+    
+    <!-- Tabs -->
+    <div class="tabs" id="tabContainer">
+      <button class="tab-btn active" onclick="showTab('ap')">AP Configuration</button>
+      <button class="tab-btn" onclick="showTab('email')">Email Settings</button>
+    </div>
 
-    <!-- Access-Point Configuration -->
-    <div class="content-grid">
-      <div class="card">
+    <!-- AP Tab -->
+    <div id="ap" class="tab-content active">
+      <div class="content-grid">
+        <div class="card">
         <h3>📡 Access-Point (AP) Configuration</h3>
           <div class="form-group">
             <label for="apSsid">SSID (max 32 chars)</label>
@@ -323,6 +292,99 @@ button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
             <span class="status-label">Last Saved</span>
             <span class="status-value" id="apLastSaved">Never</span>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Email Tab -->
+    <div id="email" class="tab-content">
+      <div class="content-grid">
+        <div class="card">
+          <h3>📧 Email Configuration</h3>
+          <div class="status-row">
+            <span class="status-label">Email Status</span>
+            <span class="status-value" id="emailConfigStatus">Not configured</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">SMTP Server</span>
+            <span class="status-value" id="smtpServer">—</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Email Account</span>
+            <span class="status-value" id="emailAccount">—</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Last Test</span>
+            <span class="status-value" id="lastEmailTest">Never</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>⚙️ SMTP Settings</h3>
+          <div class="form-group">
+            <label for="smtpHost">SMTP Host</label>
+            <input type="text" id="smtpHost" placeholder="smtp.gmail.com" value="smtp.gmail.com">
+          </div>
+
+          <div class="form-group">
+            <label for="smtpPort">SMTP Port</label>
+            <input type="number" id="smtpPort" placeholder="465" value="465">
+          </div>
+
+          <div class="form-group">
+            <label for="emailAccountInput">Email Address</label>
+            <input type="email" id="emailAccountInput" placeholder="your.email@gmail.com">
+          </div>
+
+          <div class="form-group">
+            <label for="emailPassword">App Password</label>
+            <div class="password-input">
+              <input type="password" id="emailPassword" placeholder="Gmail app password">
+              <button type="button" class="password-toggle" onclick="toggleEmailPassword()">👁</button>
+            </div>
+            <small style="color: #94a3b8; font-size: 0.75rem; margin-top: 4px; display: block;">
+              For Gmail, use an App Password (not your regular password)
+            </small>
+          </div>
+
+          <div class="form-group">
+            <label for="senderName">Sender Name</label>
+            <input type="text" id="senderName" placeholder="ESP32 Dashboard" value="ESP32 Dashboard">
+          </div>
+
+          <div class="button-group">
+            <div class="button-row">
+              <button class="btn-primary btn-full" onclick="saveEmailConfig()">Save Email Settings</button>
+              <button class="btn-danger btn-full" onclick="clearEmailForm()">Clear Form</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>🧪 Email Testing</h3>
+          <div class="form-group">
+            <label for="testRecipientEmail">Recipient Email</label>
+            <input type="email" id="testRecipientEmail" placeholder="recipient@example.com">
+          </div>
+
+          <div class="form-group">
+            <label for="testEmailSubject">Subject</label>
+            <input type="text" id="testEmailSubject" placeholder="Test Email from ESP32" value="Test Email from ESP32 Dashboard">
+          </div>
+
+          <div class="form-group">
+            <label for="testEmailContent">Message Content</label>
+            <textarea id="testEmailContent" rows="4" placeholder="Enter your test message here...">This is a test email sent from your ESP32 IoT Configuration Panel.</textarea>
+          </div>
+
+          <div class="button-group">
+            <div class="button-row">
+              <button class="btn-success btn-full" onclick="sendTestEmail('wifi')" id="sendTestEmailWifiBtn">Send test email via WiFi</button>
+              <button class="btn-success btn-full" onclick="sendTestEmail('gsm')" id="sendTestEmailGsmBtn">Send test email via GSM</button>
+            </div>
+          </div>
+          
+          <div id="emailTestResult" class="message" style="display: none;"></div>
         </div>
       </div>
     </div>
@@ -376,12 +438,34 @@ function showMessage(id, text, type = 'success') {
   setTimeout(() => { el.style.display = 'none'; }, 4000);
 }
 
+// ---------- Tabs ----------
+function showTab(tabId) {
+  document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  const tab = document.getElementById(tabId);
+  if (tab) tab.classList.add('active');
+  const activeBtn = document.querySelector(`.tabs .tab-btn[onclick="showTab('${tabId}')"]`);
+  if (activeBtn) activeBtn.classList.add('active');
+}
+
 // ---------- AP ----------
 function toggleApPassword() {
   const pass = document.getElementById('apPass');
   const btn = document.querySelectorAll('.password-toggle')[0];
   if (pass.type === 'password') { pass.type = 'text'; btn.textContent = '🙈'; }
   else { pass.type = 'password'; btn.textContent = '👁'; }
+}
+
+function toggleEmailPassword() {
+  const passField = document.getElementById('emailPassword');
+  const toggleBtn = document.querySelectorAll('.password-toggle')[1];
+  if (passField.type === 'password') { 
+    passField.type = 'text'; 
+    toggleBtn.textContent = '🙈'; 
+  } else { 
+    passField.type = 'password'; 
+    toggleBtn.textContent = '👁'; 
+  }
 }
 
 function validateAp(ssid, password) {
@@ -524,10 +608,142 @@ async function loadApFromESP32() {
   }
 }
 
+// ---------- Email Functions ----------
+async function loadEmailConfig() {
+  try {
+    const d = await apiGet('/api/load/email');
+    document.getElementById('smtpHost').value = d.smtpHost || 'smtp.gmail.com';
+    document.getElementById('smtpPort').value = d.smtpPort || 465;
+    document.getElementById('emailAccountInput').value = d.emailAccount || '';
+    document.getElementById('senderName').value = d.senderName || 'ESP32 Dashboard';
+    if (d.emailAccount) {
+      document.getElementById('smtpServer').textContent = d.smtpHost || '—';
+      document.getElementById('emailAccount').textContent = d.emailAccount || '—';
+      const emailConfigStatusEl = document.getElementById('emailConfigStatus');
+      emailConfigStatusEl.textContent = 'Configured';
+      emailConfigStatusEl.className = 'status-value status-connected';
+    }
+  } catch (e) { 
+    console.warn('Email config load failed', e); 
+  }
+}
+
+async function saveEmailConfig() {
+  const btn = event.target;
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = 'Saving...';
+  try {
+    const config = {
+      smtpHost: document.getElementById('smtpHost').value,
+      smtpPort: parseInt(document.getElementById('smtpPort').value),
+      emailAccount: document.getElementById('emailAccountInput').value,
+      emailPassword: document.getElementById('emailPassword').value,
+      senderName: document.getElementById('senderName').value
+    };
+    if (!config.smtpHost || !config.emailAccount || !config.emailPassword) {
+      showMessage('emailTestResult', 'Please fill in SMTP Host, Email, and App Password', 'error');
+      return;
+    }
+    const result = await apiPost('/api/save/email', config);
+    if (result.success) {
+      showMessage('emailTestResult', 'Email configuration saved successfully!', 'success');
+      document.getElementById('smtpServer').textContent = config.smtpHost;
+      document.getElementById('emailAccount').textContent = config.emailAccount;
+      const emailConfigStatusEl = document.getElementById('emailConfigStatus');
+      emailConfigStatusEl.textContent = 'Configured';
+      emailConfigStatusEl.className = 'status-value status-connected';
+    } else {
+      showMessage('emailTestResult', 'Failed to save email configuration: ' + (result.message || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    showMessage('emailTestResult', 'Save failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+async function sendTestEmail(via) {
+  const btn = via === 'gsm' ? document.getElementById('sendTestEmailGsmBtn') : document.getElementById('sendTestEmailWifiBtn');
+  const recipient = document.getElementById('testRecipientEmail').value;
+  const subject = document.getElementById('testEmailSubject').value;
+  const content = document.getElementById('testEmailContent').value;
+  if (!recipient) { alert('Please enter a recipient email address'); return; }
+  btn.disabled = true; const original = btn.textContent; btn.textContent = 'Sending...';
+  try {
+    const endpoint = via === 'gsm' ? '/api/email/send?via=gsm' : '/api/email/send?via=wifi';
+    const result = await apiPost(endpoint, { to: recipient, subject: subject, content: content });
+    if (result.success) {
+      showMessage('emailTestResult', 'Test email sent successfully!', 'success');
+      document.getElementById('lastEmailTest').textContent = new Date().toLocaleString();
+    } else {
+      showMessage('emailTestResult', 'Email sending failed: ' + (result.error || 'Unknown error'), 'error');
+    }
+  } catch (e) {
+    showMessage('emailTestResult', 'Email test failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = original;
+  }
+}
+
+async function sendQuickTest() {
+  const recipient = document.getElementById('testRecipientEmail').value;
+  if (!recipient) { alert('Please enter a recipient email address for quick test'); return; }
+  try {
+    const response = await fetch(`/sendDummyEmail?to=${encodeURIComponent(recipient)}`);
+    const result = await response.json();
+    showMessage('emailTestResult', result.message, result.message.includes('✅') ? 'success' : 'error');
+    if (result.message.includes('✅')) {
+      document.getElementById('lastEmailTest').textContent = new Date().toLocaleString();
+    }
+  } catch (e) {
+    showMessage('emailTestResult', 'Quick test failed: ' + e.message, 'error');
+  }
+}
+
+async function checkEmailConfiguration() {
+  const btn = document.getElementById('checkConfigBtn');
+  btn.disabled = true; const original = btn.textContent; btn.textContent = 'Checking...';
+  try {
+    const config = {
+      smtpHost: document.getElementById('smtpHost').value,
+      smtpPort: parseInt(document.getElementById('smtpPort').value),
+      emailAccount: document.getElementById('emailAccountInput').value,
+      emailPassword: document.getElementById('emailPassword').value
+    };
+    if (!config.smtpHost || !config.emailAccount || !config.emailPassword) {
+      showMessage('emailTestResult', 'Please fill in all required email configuration fields', 'info');
+      return;
+    }
+    const testRecipient = config.emailAccount;
+    const result = await apiPost('/api/email/send', { to: testRecipient, subject: 'Email Configuration Test', content: 'This is a test email to verify your SMTP configuration. If you receive this, your email settings are correct!' });
+    if (result.success) {
+      showMessage('emailTestResult', 'Email configuration test passed! Configuration is working correctly.', 'success');
+      document.getElementById('lastEmailTest').textContent = new Date().toLocaleString();
+    } else {
+      showMessage('emailTestResult', 'Email configuration test failed: ' + (result.error || 'Unknown error. Check your SMTP settings and credentials.'), 'error');
+    }
+  } catch (e) {
+    showMessage('emailTestResult', 'Configuration check failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = original;
+  }
+}
+
+function clearEmailForm() {
+  document.getElementById('emailPassword').value = '';
+  document.getElementById('testRecipientEmail').value = '';
+  document.getElementById('testEmailSubject').value = 'Test Email from ESP32 Dashboard';
+  document.getElementById('testEmailContent').value = 'This is a test email sent from your ESP32 IoT Configuration Panel.';
+  document.getElementById('emailTestResult').style.display = 'none';
+}
 // ---------- Init ----------
 document.addEventListener('DOMContentLoaded', function() {
   // Load AP settings from ESP32
   loadApFromESP32();
+  // Load Email settings from ESP32
+  loadEmailConfig();
   
   // Setup event listeners
   document.getElementById('apPass').addEventListener('input', updateApSecurityHint);
@@ -535,12 +751,8 @@ document.addEventListener('DOMContentLoaded', function() {
   </script>
 </body>
 </html>
-
-
-
 )rawliteral";
 
-// Length of the configuration HTML string
 const size_t config_html_len = sizeof(config_html) - 1;
 
-#endif
+#endif // CONFIG_HTML_H 
