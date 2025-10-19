@@ -1,92 +1,7 @@
-/**
- * @file dashboard_html.h
- * @brief Embedded Web Dashboard for ESP32 IoT Configuration Panel
- * @author IoT Device Dashboard Project
- * @version 2.2.0
- * @date 2025-01-30
- * 
- * @details
- * This file contains the complete web dashboard interface for the ESP32 IoT
- * configuration panel. The dashboard is embedded as a PROGMEM string to save
- * RAM and provides a modern, responsive web interface for device management.
- * 
- * @section features Dashboard Features
- * - Modern responsive design with dark theme
- * - Dual-mode operation (WiFi and GSM modes)
- * - Email configuration and testing
- * - Real-time status monitoring and updates
- * - Interactive configuration forms
- * - Captive portal support
- * - Mobile-friendly responsive layout
- * - Real-time data polling and caching
- * 
- * @section tabs Dashboard Tabs
- * 1. **User Management**: User profile configuration and system information
- * 2. **WiFi Configuration**: Network scanning, connection, and status monitoring
- * 3. **GSM Settings**: GSM operations, testing, and network information
- * 4. **Email Settings**: Email configuration and testing
- * 
- * @section api API Integration
- * The dashboard communicates with the ESP32 backend through REST API endpoints:
- * - GET/POST /api/status - System status information
- * - GET/POST /api/wifi/* - WiFi management operations
- * - GET/POST /api/gsm/* - GSM operations and testing
- * - GET/POST /api/email/* - Email configuration and testing
- * - GET/POST /api/load/save/user - User profile management
- * - GET/POST /api/load/save/email - Email configuration management
- * 
- * @section design Design Features
- * - Clean, modern interface with professional styling
- * - Intuitive navigation with tab-based organization
- * - Real-time status indicators and progress feedback
- * - Error handling and user feedback
- * - Responsive design for mobile and desktop
- * - Loading states and visual feedback
- * 
- * @section javascript JavaScript Features
- * - Asynchronous API communication
- * - Real-time data polling and updates
- * - Form validation and error handling
- * - Dynamic content updates
- * - Caching and performance optimization
- * - Cross-browser compatibility
- * 
- * @section css CSS Features
- * - Modern CSS Grid and Flexbox layouts
- * - Responsive design with media queries
- * - Dark theme with professional color scheme
- * - Smooth animations and transitions
- * - Mobile-first responsive design
- * - Cross-browser compatibility
- * 
- * @section performance Performance Optimizations
- * - Embedded in PROGMEM to save RAM
- * - Efficient API polling with caching
- * - Minimal external dependencies
- * - Optimized for low-memory devices
- * - Fast loading and responsive interface
- */
-
 #ifndef DASHBOARD_HTML_H
 #define DASHBOARD_HTML_H
-
-// Standard Arduino library for PROGMEM support
 #include <Arduino.h>
 
-/**
- * @brief Complete web dashboard HTML/CSS/JavaScript
- * 
- * This PROGMEM string contains the entire web dashboard including:
- * - HTML structure and content
- * - CSS styling and responsive design
- * - JavaScript functionality and API integration
- * - Real-time data polling and updates
- * - Form handling and validation
- * - Error handling and user feedback
- * 
- * The dashboard is designed to be self-contained and requires no external
- * resources, making it ideal for embedded applications.
- */
 const char dashboard_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
@@ -208,24 +123,6 @@ body {
   display: flex; 
   align-items: center; 
   gap: 8px; 
-}
-.mode-section {
-  margin-bottom: 32px;
-  padding: 20px;
-  background: #1e293b;
-  border: 1px solid #334155;
-  border-radius: 6px;
-}
-.mode-section:last-child {
-  margin-bottom: 0;
-}
-.mode-section h4 {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #e2e8f0;
-  margin-bottom: 16px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #334155;
 }
 .status-row { 
   display: flex; 
@@ -513,7 +410,6 @@ button:disabled {
       <button class="tab-btn active" onclick="showTab('user')">User Management</button>
       <button class="tab-btn" onclick="showTab('wifi')" id="wifiTabBtn">WiFi Configuration</button>
       <button class="tab-btn" onclick="showTab('gsm')" id="gsmTabBtn">GSM Settings</button>
-      <button class="tab-btn" onclick="showTab('email')" id="emailTabBtn">Email Settings</button>
     </div>
 
     <!-- User Tab -->
@@ -559,7 +455,6 @@ button:disabled {
             <label for="userEmail">Email Address</label>
             <div class="input-with-button">
               <input type="email" id="userEmail" placeholder="your.email@example.com">
-              <button class="btn-info btn-auto" onclick="checkEmail()" id="checkEmailBtn">Check Email</button>
             </div>
             <div id="emailStatus" class="email-status" style="display: none;"></div>
           </div>
@@ -685,173 +580,17 @@ button:disabled {
             </div>
             <div class="button-row">
               <button class="btn-secondary btn-full" onclick="detectNetwork()" id="detectNetworkBtn">Detect Network Info</button>
-            </div>
-            <div class="button-row">
               <button class="btn-secondary btn-full" onclick="refreshGSMStatus()" id="refreshGSMBtn">Refresh GSM Status</button>
             </div>
-          </div>
-
-          <div id="gsmEmailTestResult" class="message" style="display: none;"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Email Tab -->
-    <div id="email" class="tab-content">
-      <div class="content-grid">
-        <div class="card">
-          <h3>📧 Email Configuration</h3>
-          <div class="status-row">
-            <span class="status-label">Email Status</span>
-            <span class="status-value" id="emailConfigStatus">Not configured</span>
-          </div>
-          <div class="status-row">
-            <span class="status-label">SMTP Server</span>
-            <span class="status-value" id="smtpServer">—</span>
-          </div>
-          <div class="status-row">
-            <span class="status-label">Email Account</span>
-            <span class="status-value" id="emailAccount">—</span>
-          </div>
-          <div class="status-row">
-            <span class="status-label">Last Test</span>
-            <span class="status-value" id="lastEmailTest">Never</span>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3>⚙️ SMTP Settings</h3>
-          <div class="form-group">
-            <label for="smtpHost">SMTP Host</label>
-            <input type="text" id="smtpHost" placeholder="smtp.gmail.com" value="smtp.gmail.com">
-          </div>
-
-          <div class="form-group">
-            <label for="smtpPort">SMTP Port</label>
-            <input type="number" id="smtpPort" placeholder="465" value="465">
-          </div>
-
-          <div class="form-group">
-            <label for="emailAccountInput">Email Address</label>
-            <input type="email" id="emailAccountInput" placeholder="your.email@gmail.com">
-          </div>
-
-          <div class="form-group">
-            <label for="emailPassword">App Password</label>
-            <div class="password-input">
-              <input type="password" id="emailPassword" placeholder="Gmail app password">
-              <button type="button" class="password-toggle" onclick="toggleEmailPassword()">👁</button>
-            </div>
-            <small style="color: #94a3b8; font-size: 0.75rem; margin-top: 4px; display: block;">
-              For Gmail, use an App Password (not your regular password)
-            </small>
-          </div>
-
-          <div class="form-group">
-            <label for="senderName">Sender Name</label>
-            <input type="text" id="senderName" placeholder="ESP32 Dashboard" value="ESP32 Dashboard">
-          </div>
-
-          <div class="button-group">
             <div class="button-row">
-              <button class="btn-primary btn-full" onclick="saveEmailConfig()">Save Email Settings</button>
-              <button class="btn-danger btn-full" onclick="clearEmailForm()">Clear Form</button>
+              <button class="btn-danger btn-full" onclick="stopGsmProcesses()" id="stopGsmBtn">STOP THE PROCESS</button>
             </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3>🧪 Email Testing</h3>
-          
-          <!-- WiFi Mode Email Testing -->
-          <div class="mode-section" id="wifiEmailSection">
-            <h4>📶 WiFi Mode Email Testing</h4>
-            <div class="form-group">
-              <label for="wifiTestRecipientEmail">Recipient Email</label>
-              <input type="email" id="wifiTestRecipientEmail" placeholder="recipient@example.com">
-            </div>
-
-            <div class="form-group">
-              <label for="wifiTestEmailSubject">Subject</label>
-              <input type="text" id="wifiTestEmailSubject" placeholder="Test Email from ESP32" value="Test Email via WiFi from ESP32 Dashboard">
-            </div>
-
-            <div class="form-group">
-              <label for="wifiTestEmailContent">Message Content</label>
-              <textarea id="wifiTestEmailContent" rows="3" placeholder="Enter your test message here...">This is a test email sent via WiFi from your ESP32 IoT Configuration Panel.</textarea>
-            </div>
-
-            <div class="button-group">
-              <div class="button-row">
-                <button class="btn-success btn-full" onclick="sendWiFiTestEmail()" id="sendWiFiTestEmailBtn">Send Test Email via WiFi</button>
-                <button class="btn-secondary btn-full" onclick="sendWiFiQuickTest()" id="wifiQuickTestBtn">Quick Test</button>
-              </div>
-            </div>
-            
-            <div id="wifiEmailTestResult" class="message" style="display: none;"></div>
-          </div>
-
-          <!-- GSM Mode Email Testing -->
-          <div class="mode-section" id="gsmEmailSection">
-            <h4>📱 GSM Mode Email Testing</h4>
-            <div class="form-group">
-              <label for="gsmTestRecipientEmail">Recipient Email</label>
-              <input type="email" id="gsmTestRecipientEmail" placeholder="recipient@example.com">
-            </div>
-
-            <div class="form-group">
-              <label for="gsmTestEmailSubject">Subject</label>
-              <input type="text" id="gsmTestEmailSubject" placeholder="Test Email from ESP32" value="Test Email via GSM from ESP32 Dashboard">
-            </div>
-
-            <div class="form-group">
-              <label for="gsmTestEmailContent">Message Content</label>
-              <textarea id="gsmTestEmailContent" rows="3" placeholder="Enter your test message here...">This is a test email sent via GSM from your ESP32 IoT Configuration Panel.</textarea>
-            </div>
-
-            <div class="button-group">
-              <div class="button-row">
-                <button class="btn-warning btn-full" onclick="sendGSMTestEmail()" id="sendGSMTestEmailBtn">Send Test Email via GSM</button>
-                <button class="btn-secondary btn-full" onclick="sendGSMQuickTest()" id="gsmQuickTestBtn">Quick Test</button>
-              </div>
-            </div>
-            
-            <div id="gsmEmailTestResult" class="message" style="display: none;"></div>
-          </div>
-
-          <!-- General Email Testing (Legacy) -->
-          <div class="mode-section" id="generalEmailSection">
-            <h4>📧 General Email Testing</h4>
-            <div class="form-group">
-              <label for="testRecipientEmail">Recipient Email</label>
-              <input type="email" id="testRecipientEmail" placeholder="recipient@example.com">
-            </div>
-
-            <div class="form-group">
-              <label for="testEmailSubject">Subject</label>
-              <input type="text" id="testEmailSubject" placeholder="Test Email from ESP32" value="Test Email from ESP32 Dashboard">
-            </div>
-
-            <div class="form-group">
-              <label for="testEmailContent">Message Content</label>
-              <textarea id="testEmailContent" rows="3" placeholder="Enter your test message here...">This is a test email sent from your ESP32 IoT Configuration Panel.</textarea>
-            </div>
-
-            <div class="button-group">
-              <div class="button-row">
-                <button class="btn-info btn-full" onclick="sendTestEmail()" id="sendTestEmailBtn">Send Test Email (WiFi)</button>
-                <button class="btn-secondary btn-full" onclick="sendQuickTest()" id="quickTestBtn">Quick Test</button>
-              </div>
-              <div class="button-row">
-                <button class="btn-info btn-full" onclick="checkEmailConfiguration()" id="checkConfigBtn">Check Configuration</button>
-              </div>
-            </div>
-            
-            <div id="emailTestResult" class="message" style="display: none;"></div>
           </div>
         </div>
       </div>
     </div>
+
+    
   </div>
 
   <script>
@@ -922,6 +661,23 @@ function showEmailStatus(message, type = 'info') {
   element.style.display = 'block';
 }
 
+// Inline email validation for User Profile
+function validateUserEmailInput() {
+  const emailInput = document.getElementById('userEmail');
+  const statusEl = document.getElementById('emailStatus');
+  const value = (emailInput.value || '').trim();
+  if (!value) {
+    statusEl.style.display = 'none';
+    return;
+  }
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (emailRegex.test(value)) {
+    showEmailStatus('Looks good. Email format is valid.', 'success');
+  } else {
+    showEmailStatus('Invalid email format. Example: name@example.com', 'error');
+  }
+}
+
 // ---------- Mode Toggle ----------
 function switchMode(mode) {
   currentMode = mode;
@@ -933,23 +689,10 @@ function switchMode(mode) {
   // Show/hide tabs based on mode
   const wifiTabBtn = document.getElementById('wifiTabBtn');
   const gsmTabBtn = document.getElementById('gsmTabBtn');
-  const emailTabBtn = document.getElementById('emailTabBtn');
-  
-  // Control email section visibility based on mode
-  const wifiEmailSection = document.getElementById('wifiEmailSection');
-  const gsmEmailSection = document.getElementById('gsmEmailSection');
-  const generalEmailSection = document.getElementById('generalEmailSection');
   
   if (mode === 'wifi') {
     wifiTabBtn.classList.remove('hidden');
     gsmTabBtn.classList.add('hidden');
-    emailTabBtn.classList.remove('hidden');
-    
-    // Show only WiFi email section
-    if (wifiEmailSection) wifiEmailSection.style.display = 'block';
-    if (gsmEmailSection) gsmEmailSection.style.display = 'none';
-    if (generalEmailSection) generalEmailSection.style.display = 'none';
-    
     // Switch to WiFi tab if GSM was active
     if (document.getElementById('gsm').classList.contains('active')) {
       showTab('wifi');
@@ -957,13 +700,6 @@ function switchMode(mode) {
   } else if (mode === 'gsm') {
     wifiTabBtn.classList.add('hidden');
     gsmTabBtn.classList.remove('hidden');
-    emailTabBtn.classList.remove('hidden');
-    
-    // Show only GSM email section
-    if (wifiEmailSection) wifiEmailSection.style.display = 'none';
-    if (gsmEmailSection) gsmEmailSection.style.display = 'block';
-    if (generalEmailSection) generalEmailSection.style.display = 'none';
-    
     // Switch to GSM tab if WiFi was active
     if (document.getElementById('wifi').classList.contains('active')) {
       showTab('gsm');
@@ -980,24 +716,8 @@ function showTab(tabId) {
   document.querySelectorAll(".tab-content").forEach(tab => tab.classList.remove("active"));
   document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
   document.getElementById(tabId).classList.add("active");
-  event.target.classList.add("active");
-
-  // Ensure email section visibility is correct when switching to email tab
-  if (tabId === 'email') {
-    const wifiEmailSection = document.getElementById('wifiEmailSection');
-    const gsmEmailSection = document.getElementById('gsmEmailSection');
-    const generalEmailSection = document.getElementById('generalEmailSection');
-    
-    if (currentMode === 'wifi') {
-      if (wifiEmailSection) wifiEmailSection.style.display = 'block';
-      if (gsmEmailSection) gsmEmailSection.style.display = 'none';
-      if (generalEmailSection) generalEmailSection.style.display = 'none';
-    } else if (currentMode === 'gsm') {
-      if (wifiEmailSection) wifiEmailSection.style.display = 'none';
-      if (gsmEmailSection) gsmEmailSection.style.display = 'block';
-      if (generalEmailSection) generalEmailSection.style.display = 'none';
-    }
-  }
+  const activeBtn = document.querySelector(`.tabs .tab-btn[onclick="showTab('${tabId}')"]`);
+  if (activeBtn) activeBtn.classList.add("active");
 
   if (tabId === 'gsm') startGsmPoll(); 
   else stopGsmPoll();
@@ -1016,17 +736,7 @@ function togglePassword() {
   }
 }
 
-function toggleEmailPassword() {
-  const passField = document.getElementById("emailPassword");
-  const toggleBtn = document.querySelectorAll(".password-toggle")[1];
-  if (passField.type === "password") { 
-    passField.type = "text"; 
-    toggleBtn.textContent = "🙈"; 
-  } else { 
-    passField.type = "password"; 
-    toggleBtn.textContent = "👁"; 
-  }
-}
+// email password toggle removed with email tab
 
 // ---------- Status ----------
 async function refreshStatus() {
@@ -1066,16 +776,7 @@ async function refreshStatus() {
       internetStatusEl.className = 'status-value status-disconnected'; 
     }
     
-    // Email status
-    const emailConfigured = st.email?.configured || false;
-    const emailConfigStatusEl = document.getElementById('emailConfigStatus');
-    if (emailConfigured) {
-      emailConfigStatusEl.textContent = 'Configured';
-      emailConfigStatusEl.className = 'status-value status-connected';
-    } else {
-      emailConfigStatusEl.textContent = 'Not configured';
-      emailConfigStatusEl.className = 'status-value status-disconnected';
-    }
+    // email status removed (email tab moved to config.html)
   } catch (e) {
     console.error('Status refresh error:', e);
     document.getElementById('apAddress').textContent = 'Error';
@@ -1084,7 +785,6 @@ async function refreshStatus() {
     document.getElementById('staAddress').textContent = 'Error';
     document.getElementById('connectedNetwork').textContent = 'Error';
     document.getElementById('internetStatus').textContent = 'Error';
-    document.getElementById('emailConfigStatus').textContent = 'Error';
   }
 }
 
@@ -1254,6 +954,29 @@ function stopGsmPoll() {
     clearInterval(gsmPoll); 
     gsmPoll = null; 
   } 
+}
+
+// Stop ongoing GSM operations (polling and any loading states)
+function stopGsmProcesses() {
+  try {
+    stopGsmPoll();
+    // Re-enable and reset any GSM-related buttons currently loading
+    const ids = ['smsTestBtn', 'callTestBtn', 'detectNetworkBtn', 'refreshGSMBtn'];
+    ids.forEach(id => {
+      const btn = document.getElementById(id);
+      if (btn) {
+        btn.classList.remove('loading');
+        // Restore default labels
+        if (id === 'smsTestBtn') btn.textContent = 'Send Test SMS';
+        else if (id === 'callTestBtn') btn.textContent = 'Make Test Call';
+        else if (id === 'detectNetworkBtn') btn.textContent = 'Detect Network Info';
+        else if (id === 'refreshGSMBtn') btn.textContent = 'Refresh GSM Status';
+        btn.disabled = false;
+      }
+    });
+  } catch (e) {
+    console.warn('Failed to stop GSM processes', e);
+  }
 }
 
 async function fetchSignalStrength(forceRefresh = false) {
@@ -1505,21 +1228,6 @@ async function sendTestEmail() {
   }
 }
 
-function updateEmailMethod() {
-  const emailMethod = document.getElementById('emailMethod').value;
-  const btn = document.getElementById('sendTestEmailBtn');
-  
-  if (emailMethod === 'gsm') {
-    btn.textContent = 'Send Test Email via GSM';
-    btn.classList.remove('btn-success');
-    btn.classList.add('btn-warning');
-  } else {
-    btn.textContent = 'Send Test Email via WiFi';
-    btn.classList.remove('btn-warning');
-    btn.classList.add('btn-success');
-  }
-}
-
 async function sendQuickTest() {
   const recipient = document.getElementById('testRecipientEmail').value;
   if (!recipient) {
@@ -1537,139 +1245,6 @@ async function sendQuickTest() {
     }
   } catch (e) {
     showMessage('emailTestResult', 'Quick test failed: ' + e.message, 'error');
-  }
-}
-
-// WiFi Email Functions
-async function sendWiFiTestEmail() {
-  const btn = document.getElementById('sendWiFiTestEmailBtn');
-  const recipient = document.getElementById('wifiTestRecipientEmail').value;
-  const subject = document.getElementById('wifiTestEmailSubject').value;
-  const content = document.getElementById('wifiTestEmailContent').value;
-  
-  if (!recipient) {
-    alert('Please enter a recipient email address');
-    return;
-  }
-  
-  btn.classList.add('loading');
-  btn.textContent = 'Sending via WiFi...';
-  btn.disabled = true;
-  
-  try {
-    const enhancedContent = content + '\n\n--- Email Details ---\n' +
-                          'Method: WiFi SMTP (WiFi Connection)\n' +
-                          'Timestamp: ' + new Date().toLocaleString() + '\n' +
-                          'Device: ESP32 IoT Configuration Panel\n' +
-                          'If you receive this email, WiFi email functionality is working correctly!';
-    
-    const result = await apiPost('/api/email/send', {
-      to: recipient,
-      subject: subject,
-      content: enhancedContent
-    });
-    
-    if (result.success) {
-      showMessage('wifiEmailTestResult', 'WiFi email sent successfully!', 'success');
-      document.getElementById('lastEmailTest').textContent = new Date().toLocaleString();
-    } else {
-      showMessage('wifiEmailTestResult', 'WiFi email sending failed: ' + (result.error || 'Unknown error'), 'error');
-    }
-  } catch (e) {
-    showMessage('wifiEmailTestResult', 'WiFi email test failed: ' + e.message, 'error');
-  } finally {
-    btn.classList.remove('loading');
-    btn.textContent = 'Send Test Email via WiFi';
-    btn.disabled = false;
-  }
-}
-
-async function sendWiFiQuickTest() {
-  const recipient = document.getElementById('wifiTestRecipientEmail').value;
-  if (!recipient) {
-    alert('Please enter a recipient email address for quick test');
-    return;
-  }
-  
-  try {
-    const response = await fetch(`/sendDummyEmail?to=${encodeURIComponent(recipient)}`);
-    const result = await response.json();
-    showMessage('wifiEmailTestResult', result.message, result.message.includes('✅') ? 'success' : 'error');
-    if (result.message.includes('✅')) {
-      document.getElementById('lastEmailTest').textContent = new Date().toLocaleString();
-    }
-  } catch (e) {
-    showMessage('wifiEmailTestResult', 'WiFi quick test failed: ' + e.message, 'error');
-  }
-}
-
-// GSM Email Functions
-async function sendGSMTestEmail() {
-  const btn = document.getElementById('sendGSMTestEmailBtn');
-  const recipient = document.getElementById('gsmTestRecipientEmail').value;
-  const subject = document.getElementById('gsmTestEmailSubject').value;
-  const content = document.getElementById('gsmTestEmailContent').value;
-  
-  if (!recipient) {
-    alert('Please enter a recipient email address');
-    return;
-  }
-  
-  btn.classList.add('loading');
-  btn.textContent = 'Sending via GSM...';
-  btn.disabled = true;
-  
-  try {
-    const enhancedContent = content + '\n\n--- Email Details ---\n' +
-                          'Method: GSM SMTP (Cellular Connection)\n' +
-                          'APN: internet\n' +
-                          'Timestamp: ' + new Date().toLocaleString() + '\n' +
-                          'Device: ESP32 IoT Configuration Panel\n' +
-                          'If you receive this email, GSM email functionality is working correctly!';
-    
-    const result = await apiPost('/api/email/gsm/send', {
-      to: recipient,
-      subject: subject,
-      content: enhancedContent
-    });
-    
-    if (result.success) {
-      showMessage('gsmEmailTestResult', 'GSM email sent successfully!', 'success');
-      document.getElementById('lastEmailTest').textContent = new Date().toLocaleString();
-    } else {
-      showMessage('gsmEmailTestResult', 'GSM email sending failed: ' + (result.error || 'Unknown error'), 'error');
-    }
-  } catch (e) {
-    showMessage('gsmEmailTestResult', 'GSM email test failed: ' + e.message, 'error');
-  } finally {
-    btn.classList.remove('loading');
-    btn.textContent = 'Send Test Email via GSM';
-    btn.disabled = false;
-  }
-}
-
-async function sendGSMQuickTest() {
-  const recipient = document.getElementById('gsmTestRecipientEmail').value;
-  if (!recipient) {
-    alert('Please enter a recipient email address for quick test');
-    return;
-  }
-  
-  try {
-    const result = await apiPost('/api/email/gsm/send', {
-      to: recipient,
-      subject: 'Quick Test Email via GSM',
-      content: 'This is a quick test email sent via GSM from your ESP32 IoT Configuration Panel.\n\nMethod: GSM SMTP (Cellular Connection)\nAPN: internet\nTimestamp: ' + new Date().toLocaleString()
-    });
-    
-    if (result.success) {
-      showMessage('gsmEmailTestResult', '✅ GSM quick test email sent successfully!', 'success');
-      document.getElementById('lastEmailTest').textContent = new Date().toLocaleString();
-    } else {
-      showMessage('gsmEmailTestResult', '❌ GSM quick test failed: ' + (result.error || 'Unknown error'), 'error');
-    }
-  } catch (e) {
-    showMessage('gsmEmailTestResult', 'GSM quick test failed: ' + e.message, 'error');
   }
 }
 
@@ -1819,51 +1394,45 @@ document.addEventListener('DOMContentLoaded', function() {
   window.connectNetwork = connectNetwork;
   window.disconnectNetwork = disconnectNetwork;
   window.togglePassword = togglePassword;
-  window.toggleEmailPassword = toggleEmailPassword;
+  // email toggle removed
   window.switchMode = switchMode;
   window.showTab = showTab;
   window.testSMS = testSMS;
   window.testCall = testCall;
   window.detectNetwork = detectNetwork;
   window.refreshGSMStatus = refreshGSMStatus;
+  window.stopGsmProcesses = stopGsmProcesses;
   window.saveUser = saveUser;
   window.clearUserForm = clearUserForm;
-  window.saveEmailConfig = saveEmailConfig;
-  window.sendTestEmail = sendTestEmail;
-  window.updateEmailMethod = updateEmailMethod;
-  window.sendQuickTest = sendQuickTest;
-  window.sendWiFiTestEmail = sendWiFiTestEmail;
-  window.sendWiFiQuickTest = sendWiFiQuickTest;
-  window.sendGSMTestEmail = sendGSMTestEmail;
-  window.sendGSMQuickTest = sendGSMQuickTest;
-  window.checkEmailConfiguration = checkEmailConfiguration;
   window.checkEmail = checkEmail;
-  window.clearEmailForm = clearEmailForm;
+  // email helpers removed
 
   // Initialize mode toggle
   switchMode('wifi'); // Start in WiFi mode
 
   // Initial loads
   refreshStatus();
-  loadGsm();
+  // loadGsm removed (no implementation present)
   loadUser();
-  loadEmailConfig();
+  // email config load removed
 
   // Refresh status every 10s
   setInterval(refreshStatus, 10000);
+
+  // Live email validation
+  const emailInputEl = document.getElementById('userEmail');
+  if (emailInputEl) {
+    emailInputEl.addEventListener('input', validateUserEmailInput);
+  }
 });
   </script>
 </body>
 </html>
+</html>
+</html>
+
 )rawliteral";
 
-/**
- * @brief Length of the dashboard HTML string
- * 
- * This constant provides the exact length of the embedded HTML string.
- * It's calculated as sizeof(dashboard_html) - 1 to exclude the null terminator.
- * This value is used by the web server to properly serve the HTML content.
- */
 const size_t dashboard_html_len = sizeof(dashboard_html) - 1;
 
 #endif // DASHBOARD_HTML_H
