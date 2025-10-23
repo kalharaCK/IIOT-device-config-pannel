@@ -23,7 +23,8 @@ A comprehensive dual-mode configuration panel for ESP32 with WiFi and GSM manage
 - [License](#license)
 
 ## ✨ Features
-[![Version]((https://github.com/kalharaCK/IIOT-device-config-pannel/blob/main/doc/Picture1.jpg))]
+![System architecture](doc/Picture1.jpg)
+
 ### Core Functionality
 - **Dual Dashboard System**: Switch between Main and Email configuration dashboards
 - **Double Reset Detection**: Smart mode switching by pressing reset twice within 3 seconds
