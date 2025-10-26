@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Configuration Panel</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+            background: #ffffff;
+            color: #000000;
+            line-height: 1.5;
+        }
+
+        .container {
+            width: 100%;
+            min-height: 100vh;
+            padding: 2rem;
+            overflow: auto;
+        }
+
+        .wrapper {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        /* Header */
+        .header {
+            border-bottom: 4px solid #000;
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            font-size: 1.125rem;
+            color: #4b5563;
+            margin-bottom: 1rem;
+        }
+
+        .badges {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.875rem;
+        }
+
+        .badge {
+            padding: 0.25rem 0.75rem;
+        }
+
+        .badge-black {
+            background: #000;
+            color: #fff;
+        }
+
+        .badge-outline {
+            border: 2px solid #000;
+        }
+
+        /* Grid Layout */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 1.5rem;
+        }
+
+        .col-3 { grid-column: span 3; }
+        .col-6 { grid-column: span 6; }
+
+        /* Cards */
+        .card {
+            border: 4px solid #000;
+            padding: 1.25rem;
+        }
+
+        .card-2 {
+            border: 2px solid #000;
+            padding: 1rem;
+        }
+
+        .card-gray {
+            background: #f9fafb;
+        }
+
+        .card-black {
+            background: #000;
+            color: #fff;
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 2px solid #000;
+        }
+
+        .card-black .card-header {
+            border-bottom-color: #fff;
+        }
+
+        .card-title {
+            font-size: 1.125rem;
+            font-weight: bold;
+        }
+
+        .card-subtitle {
+            font-size: 0.75rem;
+            color: #6b7280;
+        }
+
+        /* Specs */
+        .specs {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .spec-row {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .spec-label {
+            color: #4b5563;
+        }
+
+        .spec-value {
+            font-weight: 600;
+        }
+
+        /* Interface Items */
+        .interface-item {
+            border: 1px solid #9ca3af;
+            padding: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .interface-title {
+            font-weight: 500;
+            font-size: 0.875rem;
+        }
+
+        .interface-desc {
+            color: #6b7280;
+            font-size: 0.75rem;
+        }
+
+        /* Mode Cards */
+        .mode-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+        }
+
+        .mode-card {
+            border: 2px solid #000;
+            padding: 0.75rem;
+        }
+
+        .mode-title {
+            font-weight: bold;
+            margin-bottom: 0.25rem;
+        }
+
+        .mode-file {
+            font-size: 0.75rem;
+            color: #6b7280;
+            margin-bottom: 0.5rem;
+        }
+
+        .mode-features {
+            font-size: 0.75rem;
+        }
+
+        .mode-features p {
+            margin: 0.25rem 0;
+        }
+
+        /* API Lists */
+        .api-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+        }
+
+        .api-section {
+            border: 1px solid #000;
+            padding: 0.75rem;
+        }
+
+        .api-header {
+            font-weight: 600;
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.25rem;
+            border-bottom: 1px solid #9ca3af;
+        }
+
+        .api-item {
+            border-left: 2px solid #000;
+            padding-left: 0.5rem;
+            margin: 0.375rem 0;
+            font-size: 0.75rem;
+        }
+
+        .api-endpoint {
+            font-family: monospace;
+            font-weight: 600;
+        }
+
+        .api-desc {
+            color: #6b7280;
+        }
+
+        /* Portal Section */
+        .portal {
+            margin-top: 0.75rem;
+            border: 1px solid #9ca3af;
+            padding: 0.75rem;
+        }
+
+        .portal-header {
+            font-weight: 600;
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .portal-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            font-family: monospace;
+        }
+
+        /* Config Files */
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.5rem;
+        }
+
+        .config-item {
+            border: 1px solid #9ca3af;
+            padding: 0.5rem;
+        }
+
+        .config-file {
+            font-family: monospace;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+
+        .config-desc {
+            color: #6b7280;
+            font-size: 0.75rem;
+        }
+
+        /* Network Cards */
+        .network-section {
+            border: 2px solid #000;
+            padding: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .network-title {
+            font-weight: 600;
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .network-details {
+            font-size: 0.75rem;
+        }
+
+        .network-details p {
+            margin: 0.25rem 0;
+        }
+
+        /* Feature Matrix */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.75rem;
+        }
+
+        .feature-card {
+            border: 2px solid #000;
+            padding: 0.75rem;
+        }
+
+        .feature-title {
+            font-weight: bold;
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.25rem;
+            border-bottom: 1px solid #9ca3af;
+        }
+
+        .feature-card ul {
+            list-style: none;
+            font-size: 0.75rem;
+        }
+
+        .feature-card li {
+            margin: 0.25rem 0;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 2px solid #000;
+            text-align: center;
+            font-size: 0.875rem;
+            color: #4b5563;
+        }
+
+        /* Icons (using Unicode symbols) */
+        .icon {
+            display: inline-block;
+            width: 1.5rem;
+            height: 1.5rem;
+            text-align: center;
+            line-height: 1.5rem;
+        }
+
+        .icon-sm {
+            width: 1.25rem;
+            height: 1.25rem;
+            line-height: 1.25rem;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .col-3, .col-6 {
+                grid-column: span 12;
+            }
+            
+            .feature-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 640px) {
+            .container {
+                padding: 1rem;
+            }
+            
+            .header h1 {
+                font-size: 1.75rem;
+            }
+            
+            .badges {
+                flex-direction: column;
+            }
+            
+            .api-grid, .mode-grid, .config-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="wrapper">
+            <!-- Header -->
+            <div class="header">
+                <h1>ESP32 Configuration Panel</h1>
+                <p>System Architecture & Component Integration</p>
+                <div class="badges">
+                    <span class="badge badge-black">v2.3.0</span>
+                    <span class="badge badge-outline">Dual Dashboard Mode</span>
+                    <span class="badge badge-outline">GSM + WiFi</span>
+                </div>
+            </div>
+
+            <div class="grid">
+                <!-- Left Column - Hardware Layer -->
+                <div class="col-3">
+                    <!-- ESP32 Core -->
+                    <div class="card card-gray">
+                        <div class="card-header">
+                            <span class="icon"></span>
+                            <div>
+                                <h3 class="card-title">ESP32 DevKit</h3>
+                                <p class="card-subtitle">Hardware Core</p>
+                            </div>
+                        </div>
+                        <div class="specs">
+                            <div class="spec-row">
+                                <span class="spec-label">CPU:</span>
+                                <span class="spec-value">Dual-core</span>
+                            </div>
+                            <div class="spec-row">
+                                <span class="spec-label">Flash:</span>
+                                <span class="spec-value">4MB</span>
+                            </div>
+                            <div class="spec-row">
+                                <span class="spec-label">RAM:</span>
+                                <span class="spec-value">520KB</span>
+                            </div>
+                            <div class="spec-row">
+                                <span class="spec-label">UART:</span>
+                                <span class="spec-value">Serial2</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Physical Interfaces -->
+                    <div class="card-2">
+                        <h4 class="card-title"> Physical Interfaces</h4>
+                        <div class="interface-item">
+                            <p class="interface-title">WiFi Radio</p>
+                            <p class="interface-desc">2.4GHz 802.11 b/g/n</p>
+                        </div>
+                        <div class="interface-item">
+                            <p class="interface-title">GSM Modem</p>
+                            <p class="interface-desc">Serial2 (RX:16, TX:17)</p>
+                        </div>
+                        <div class="interface-item">
+                            <p class="interface-title">SPIFFS</p>
+                            <p class="interface-desc">Flash File System</p>
+                        </div>
+                    </div>
+
+                    <!-- DRD Module -->
+                    <div class="card card-black">
+                        <h4 class="card-title"> Double Reset Detection</h4>
+                        <div class="network-details">
+                            <p>Timeout: 3 seconds</p>
+                            <p>Mode Switching Logic</p>
+                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #fff;">
+                                <p>Single Reset → Main Dashboard</p>
+                                <p>Double Reset → Email Config</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Middle Column - Application Layer -->
+                <div class="col-6">
+                    <!-- Mode Selection -->
+                    <div class="card">
+                        <h3 class="card-header">
+                            <span class="icon"></span>
+                            <span class="card-title">Dashboard Mode Controller</span>
+                        </h3>
+                        <div class="mode-grid">
+                            <div class="mode-card">
+                                <p class="mode-title">MODE_MAIN</p>
+                                <p class="mode-file">dashboard_html.h</p>
+                                <div class="mode-features">
+                                    <p>• WiFi Management</p>
+                                    <p>• GSM Operations</p>
+                                    <p>• Sensor Dashboard</p>
+                                </div>
+                            </div>
+                            <div class="mode-card">
+                                <p class="mode-title">MODE_EMAIL</p>
+                                <p class="mode-file">config_html.h</p>
+                                <div class="mode-features">
+                                    <p>• Email Settings</p>
+                                    <p>• SMTP Config</p>
+                                    <p>• AP Configuration</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Web Server Core -->
+                    <div class="card-2">
+                        <h3 class="card-header">
+                            <span class="icon"></span>
+                            <span class="card-title">Web Server - Port 80</span>
+                        </h3>
+                        
+                        <div class="api-grid">
+                            <!-- Main Dashboard APIs -->
+                            <div class="api-section">
+                                <h4 class="api-header">Main Dashboard APIs</h4>
+                                <div class="api-item">
+                                    <p class="api-endpoint">/api/status</p>
+                                    <p class="api-desc">System status</p>
+                                </div>
+                                <div class="api-item">
+                                    <p class="api-endpoint">/api/sensors</p>
+                                    <p class="api-desc">Sensor readings</p>
+                                </div>
+                                <div class="api-item">
+                                    <p class="api-endpoint">/api/wifi/scan</p>
+                                    <p class="api-desc">Network discovery</p>
+                                </div>
+                                <div class="api-item">
+                                    <p class="api-endpoint">/api/wifi/connect</p>
+                                    <p class="api-desc">Join network</p>
+                                </div>
+                                <div class="api-item">
+                                    <p class="api-endpoint">/api/gsm/signal</p>
+                                    <p class="api-desc">Signal strength</p>
+                                </div>
+                                <div class="api-item">
+                                    <p class="api-endpoint">/api/gsm/call</p>
+                                    <p class="api-desc">Voice calling</p>
+                                </div>
+                                <div class="api-item">
+                                    <p class="api-endpoint">/api/gsm/sms</p>
+                                    <p class="api-desc">Text messaging</p>
+                                </div>
+                            </div>
+
+                            <!-- Email Dashboard APIs -->
+                            <div class="api-section">
+                                <h4 class="api-header">Email Config APIs</h4>
+                                <div class="api-item">
+                                    <p class="api-endpoint">/api/load/email</p>
+                                    <p class="api-desc">Get SMTP config</p>
+                                </div>
+                                <div class="api-item">
+                                    <p class="api-endpoint">/api/save/email</p>
+                                    <p class="api-desc">Update settings</p>
+                                </div>
+                                <div class="api-item">
+                                    <p class="api-endpoint">/api/load/ap</p>
+                                    <p class="api-desc">Get AP config</p>
+                                </div>
+                                <div class="api-item">
+                                    <p class="api-endpoint">/api/save/ap</p>
+                                    <p class="api-desc">Update AP</p>
+                                </div>
+                                <div class="api-item">
+                                    <p class="api-endpoint">/api/email/send</p>
+                                    <p class="api-desc">Send via WiFi</p>
+                                </div>
+                                <div class="api-item">
+                                    <p class="api-endpoint">/api/email/gsm/send</p>
+                                    <p class="api-desc">Send via GSM</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Captive Portal -->
+                        <div class="portal">
+                            <h4 class="portal-header">
+                                <span class="icon-sm"></span>
+                                Captive Portal Detection
+                            </h4>
+                            <div class="portal-grid">
+                                <span>/generate_204</span>
+                                <span>/ncsi.txt</span>
+                                <span>/hotspot-detect</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Configuration Manager -->
+                    <div class="card-2">
+                        <h3 class="card-header">
+                            <span class="icon"></span>
+                            <span class="card-title">Configuration Manager - SPIFFS</span>
+                        </h3>
+                        <div class="config-grid">
+                            <div class="config-item">
+                                <p class="config-file">/wifi.json</p>
+                                <p class="config-desc">AP & STA credentials</p>
+                            </div>
+                            <div class="config-item">
+                                <p class="config-file">/gsm.json</p>
+                                <p class="config-desc">Carrier, APN settings</p>
+                            </div>
+                            <div class="config-item">
+                                <p class="config-file">/user.json</p>
+                                <p class="config-desc">Profile information</p>
+                            </div>
+                            <div class="config-item">
+                                <p class="config-file">/email.json</p>
+                                <p class="config-desc">SMTP configuration</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column - Network & External Services -->
+                <div class="col-3">
+                    <!-- WiFi Networks -->
+                    <div class="card">
+                        <h3 class="card-header">
+                            <span class="icon"></span>
+                            <span class="card-title">WiFi Connectivity</span>
+                        </h3>
+                        
+                        <!-- AP Mode -->
+                        <div class="network-section card-gray">
+                            <p class="network-title">Access Point Mode</p>
+                            <div class="network-details">
+                                <p>SSID: Config panel</p>
+                                <p>Pass: 12345678</p>
+                                <p>IP: 192.168.4.1</p>
+                                <p>DNS: Port 53</p>
+                            </div>
+                        </div>
+
+                        <!-- STA Mode -->
+                        <div class="network-section">
+                            <p class="network-title">Station Mode</p>
+                            <div class="network-details">
+                                <p>Network Scan</p>
+                                <p>Auto-Connect</p>
+                                <p>RSSI Monitoring</p>
+                                <p>Config Persistence</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- GSM Network -->
+                    <div class="card card-gray">
+                        <h3 class="card-header">
+                            <span class="icon"></span>
+                            <span class="card-title">GSM Services</span>
+                        </h3>
+                        
+                        <div class="interface-item">
+                            <p class="interface-title">Voice Calls</p>
+                            <p class="interface-desc">Make/Hangup calls</p>
+                        </div>
+                        <div class="interface-item">
+                            <p class="interface-title">SMS Messages</p>
+                            <p class="interface-desc">Send text messages</p>
+                        </div>
+                        <div class="interface-item">
+                            <p class="interface-title">Signal Monitor</p>
+                            <p class="interface-desc">dBm, CSQ, Quality</p>
+                        </div>
+                        <div class="interface-item">
+                            <p class="interface-title">Carrier Info</p>
+                            <p class="interface-desc">Network detection</p>
+                        </div>
+                    </div>
+
+                    <!-- Email Services -->
+                    <div class="card">
+                        <h3 class="card-header">
+                            <span class="icon"></span>
+                            <span class="card-title">Email Services</span>
+                        </h3>
+                        
+                        <div class="network-section">
+                            <p class="network-title">SMTP Client</p>
+                            <div class="network-details">
+                                <p>Host: smtp.gmail.com</p>
+                                <p>Port: 465 (SSL)</p>
+                                <p>Auth: App Password</p>
+                                <p>Via: WiFi or GSM</p>
+                            </div>
+                        </div>
+
+                        <div class="interface-item">
+                            <p class="interface-desc">Send via GSM for offline operation</p>
+                        </div>
+                    </div>
+
+                    <!-- Client Devices -->
+                    <div class="card-2">
+                        <h4 class="card-title"> Client Devices</h4>
+                        <div class="network-details">
+                            <p>Mobile Browsers</p>
+                            <p>Desktop Browsers</p>
+                            <p>Auto-redirect Portal</p>
+                            <p>Real-time Updates</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Feature Matrix -->
+            <div class="card">
+                <h3 class="card-header">
+                    <span class="icon"></span>
+                    <span class="card-title">System Features & Capabilities</span>
+                </h3>
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h4 class="feature-title">WiFi Management</h4>
+                        <ul>
+                            <li>• Dual AP+STA Mode</li>
+                            <li>• Network Scanning</li>
+                            <li>• Auto-Connect</li>
+                            <li>• Captive Portal</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card">
+                        <h4 class="feature-title">GSM Features</h4>
+                        <ul>
+                            <li>• Voice Calls</li>
+                            <li>• SMS Messaging</li>
+                            <li>• Signal Monitoring</li>
+                            <li>• Carrier Detection</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card">
+                        <h4 class="feature-title">Email System</h4>
+                        <ul>
+                            <li>• SMTP over WiFi</li>
+                            <li>• SMTP over GSM</li>
+                            <li>• SSL/TLS Support</li>
+                            <li>• Gmail Integration</li>
+                        </ul>
+                    </div>
+                    <div class="feature-card">
+                        <h4 class="feature-title">Configuration</h4>
+                        <ul>
+                            <li>• Persistent Storage</li>
+                            <li>• Dual Dashboard</li>
+                            <li>• DRD Mode Switch</li>
+                            <li>• RESTful APIs</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="footer">
+                <p>ESP32 DevKit v2.3.0 | Firmware Date: 2025-01-30 | Dual-Mode Configuration Panel</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
