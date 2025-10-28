@@ -1,0 +1,2719 @@
+% ESP32 IIOT Configuration Panel - Complete Line-by-Line Documentation
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{minted}
+\usepackage{fancyhdr}
+\usepackage{lastpage}
+
+\geometry{margin=0.9in}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue,
+  citecolor=blue,
+  pdftitle={ESP32 IIoT Line-by-Line Documentation},
+  pdfauthor={IIOT-device-config-panel-GSM-Mailing Project}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small ESP32 IIoT Configuration Panel}
+\fancyhead[R]{\small v2.3.0}
+\fancyfoot[C]{\thepage\ of \pageref{LastPage}}
+
+\title{ESP32 IIoT Configuration Panel\\
+\large Complete Line-by-Line Code Documentation\\
+\normalsize WiFi + GSM + Double Reset Detection System}
+\author{Project: IIOT-device-config-panel-GSM-Mailing\\
+Documentation v1.0}
+\date{Generated: \today}
+
+\definecolor{codebg}{RGB}{246,248,250}
+\definecolor{commentclr}{RGB}{106,115,125}
+\definecolor{keywordclr}{RGB}{215,58,73}
+\setminted{
+  fontsize=\footnotesize,
+  baselinestretch=1,
+  breaklines=true,
+  autogobble,
+  breakanywhere,
+  bgcolor=codebg,
+  linenos
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document provides exhaustive line-by-line documentation for the ESP32 IIoT Configuration Panel firmware. The system implements a dual-dashboard architecture with WiFi and GSM connectivity, featuring Double Reset Detection (DRD) for mode switching, persistent configuration storage, environmental sensor monitoring, and GSM communication capabilities (SMS, voice calls, email over GPRS).
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ============================================================================
+\section{System Architecture Overview}
+% ============================================================================
+
+\subsection{Core Design Philosophy}
+The firmware implements a modular, event-driven architecture with the following key characteristics:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Dual-Mode Operation}: Physical double-reset detection switches between Main (WiFi+GSM management) and Email configuration dashboards
+  \item \textbf{Persistent Configuration}: SPIFFS-based JSON storage for WiFi, GSM, user, and email settings
+  \item \textbf{Async WiFi Scanning}: Non-blocking network discovery with cached results
+  \item \textbf{GSM Abstraction}: Hardware modem control via AT commands with caching layer
+  \item \textbf{Embedded Dashboards}: Pre-compiled HTML/CSS/JS served from program memory
+  \item \textbf{RESTful API}: JSON-based endpoints for all configuration and telemetry operations
+\end{itemize}
+
+\subsection{Hardware Requirements}
+\begin{itemize}[leftmargin=*]
+  \item ESP32 DevKit (or compatible)
+  \item GSM Modem on Serial2 (RX=GPIO16, TX=GPIO17)
+  \item SIM card with active data plan
+  \item USB connection for programming and debugging
+\end{itemize}
+
+\subsection{Software Dependencies}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.3\linewidth} p{0.65\linewidth}}
+\texttt{Arduino.h} & Core ESP32 framework \\
+\texttt{WiFi.h} & WiFi stack (AP and Station modes) \\
+\texttt{WebServer.h} & HTTP server implementation \\
+\texttt{DNSServer.h} & Captive portal DNS redirection \\
+\texttt{SPIFFS.h} & Flash filesystem for configuration storage \\
+\texttt{ArduinoJson.h} & JSON serialization/deserialization \\
+\texttt{Preferences.h} & NVS storage for DRD state \\
+\end{longtable}
+
+% ============================================================================
+\section{File Structure and Organization}
+% ============================================================================
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.35\linewidth} p{0.6\linewidth}}
+\hline
+\textbf{File} & \textbf{Purpose} \\
+\hline
+\endhead
+\texttt{platformio.ini} & Build configuration, dependencies, upload settings \\
+\texttt{src/main.cpp} & Core firmware (1766 lines): initialization, web server, API routes \\
+\texttt{src/dashboard\_html.h} & Main dashboard: WiFi, GSM, Device tabs (embedded binary) \\
+\texttt{src/config\_html.h} & Email configuration dashboard (embedded binary) \\
+\texttt{src/GSM\_Test.h/.cpp} & GSM modem abstraction: signal, network, SMS, calls \\
+\texttt{src/SMTP.h/.cpp} & Email sending over GSM GPRS connection \\
+\texttt{src/DRD\_Manager.h} & Double Reset Detection utility (NVS-based) \\
+\texttt{architecture.html} & Visual system architecture diagram \\
+\texttt{README.md} & Quick start guide and feature overview \\
+\hline
+\end{longtable}
+
+% ============================================================================
+\section{main.cpp: Complete Line-by-Line Analysis}
+% ============================================================================
+
+\subsection{File Header and Metadata (Lines 1--24)}
+
+\begin{minted}{cpp}
+/**
+ * ESP32 Configuration Panel with Double Reset Detection
+ * 
+ * Features:
+ * - Single reset: Main dashboard (WiFi + GSM management)
+ * - Double reset: Email configuration dashboard
+ * - Automatic dashboard switching via DRD
+ * 
+ * Double Reset: Press reset button twice within 3 seconds
+ * 
+ * @version 2.3.0
+ * @date 2025-01-30
+ */
+\end{minted}
+
+\paragraph{Lines 1--13: File banner}
+Documentation header explaining the dual-dashboard system and user interaction pattern. Critical for understanding the DRD mechanism.
+
+\paragraph{Line 11: Version identifier}
+Semantic versioning: \texttt{v2.3.0} indicates major version 2, minor 3, patch 0. Used in \texttt{/api/system/info} endpoint.
+
+\paragraph{Line 12: Last updated timestamp}
+ISO 8601 date format for tracking firmware build date. Exposed via API for client version checking.
+
+\subsection{System Includes (Lines 15--26)}
+
+\begin{minted}{cpp}
+#include <Arduino.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <DNSServer.h>
+#include <SPIFFS.h>
+#include <ArduinoJson.h>
+#include "GSM_Test.h"
+#include "SMTP.h"
+#include "DRD_Manager.h"
+#include "dashboard_html.h"
+#include "config_html.h"
+\end{minted}
+
+\paragraph{Line 15: \texttt{Arduino.h}}
+ESP32 core framework. Provides \texttt{Serial}, \texttt{millis()}, \texttt{delay()}, \texttt{random()}, GPIO functions.
+
+\paragraph{Line 16: \texttt{WiFi.h}}
+Dual-mode WiFi stack. Enables simultaneous AP (for configuration portal) and STA (for internet connectivity).
+
+\paragraph{Line 17: \texttt{WebServer.h}}
+Synchronous HTTP/1.1 server. Handles REST API requests on port 80. Not async but sufficient for low-concurrency embedded use.
+
+\paragraph{Line 18: \texttt{DNSServer.h}}
+Captive portal DNS server. Redirects all DNS queries to ESP32's IP, forcing devices to open configuration page.
+
+\paragraph{Line 19: \texttt{SPIFFS.h}}
+SPI Flash File System. Provides \texttt{fopen()}-like API for persistent configuration storage in flash memory.
+
+\paragraph{Line 20: \texttt{ArduinoJson.h}}
+JSON library (v6.x). Used for all configuration serialization and API responses. Efficient memory management with \texttt{DynamicJsonDocument}.
+
+\paragraph{Lines 21--22: GSM modules}
+\texttt{GSM\_Test.h} abstracts modem hardware with methods for signal strength, network detection, SMS, calls. \texttt{SMTP.h} implements email over GPRS.
+
+\paragraph{Line 23: \texttt{DRD\_Manager.h}}
+Double Reset Detection. Uses ESP32's NVS (non-volatile storage) to persist reset timestamps across reboots.
+
+\paragraph{Lines 24--25: Dashboard headers}
+Pre-compiled HTML/CSS/JS stored as C arrays in program memory. \texttt{dashboard\_html.h} contains main interface; \texttt{config\_html.h} holds email configuration UI.
+
+\subsection{Global Configuration Constants (Lines 30--38)}
+
+\begin{minted}{cpp}
+#define DNS_PORT 53
+#define DRD_TIMEOUT 3000  // 3 seconds for double reset detection
+
+#define DEVICE_MODEL "ESP32 DevKit"
+#define FIRMWARE_VERSION "v2.3.0"
+#define LAST_UPDATED "2025-01-30"
+\end{minted}
+
+\paragraph{Line 30: DNS\_PORT}
+Standard DNS port (53). Captive portal DNS server listens here to intercept all DNS requests.
+
+\paragraph{Line 31: DRD\_TIMEOUT}
+3000ms window for double reset detection. User must press reset twice within this interval to trigger email configuration mode.
+
+\paragraph{Lines 36--38: System metadata}
+Device identification strings exposed via \texttt{/api/system/info}. Used by dashboards for display and version checking.
+
+\subsection{Dashboard Mode Enumeration (Lines 48--52)}
+
+\begin{minted}{cpp}
+enum DashboardMode {
+  MODE_MAIN,     // Main dashboard (WiFi + GSM)
+  MODE_EMAIL     // Email configuration dashboard
+};
+
+DashboardMode currentMode = MODE_MAIN;
+\end{minted}
+
+\paragraph{Lines 48--51: Mode enumeration}
+Two operating modes determined at boot by DRD. \texttt{MODE\_MAIN} serves \texttt{dashboard\_html.h}; \texttt{MODE\_EMAIL} serves \texttt{config\_html.h}.
+
+\paragraph{Line 53: Default mode}
+Initialized to \texttt{MODE\_MAIN}. Overridden in \texttt{setup()} if double reset detected.
+
+\subsection{Core System Instances (Lines 58--65)}
+
+\begin{minted}{cpp}
+DNSServer dnsServer;              // DNS server for captive portal
+WebServer server(80);             // HTTP web server on port 80
+DRD_Manager drd(DRD_TIMEOUT);     // Double reset detector
+
+GSM_Test gsmModem(Serial2, 16, 17, 115200);  // GSM modem on Serial2
+SMTP smtp(Serial2, 16, 17, 115200);          // SMTP client for GSM email
+\end{minted}
+
+\paragraph{Line 58: DNSServer instance}
+Handles DNS queries for captive portal. Redirects all hostnames to ESP32's AP IP (192.168.4.1).
+
+\paragraph{Line 59: WebServer instance}
+HTTP server listening on port 80. Serves dashboards and REST API. Synchronous, single-threaded.
+
+\paragraph{Line 60: DRD\_Manager instance}
+Constructed with 3-second timeout. Checks NVS on boot to detect double reset pattern.
+
+\paragraph{Line 63: GSM\_Test instance}
+Hardware abstraction for modem on \texttt{Serial2}. RX=GPIO16, TX=GPIO17, 115200 baud. Supports AT commands, signal queries, SMS, calls.
+
+\paragraph{Line 64: SMTP instance}
+Email client using same serial interface. Implements AUTH LOGIN, MAIL FROM, RCPT TO, DATA sequence over GSM GPRS.
+
+\subsection{Configuration File Paths (Lines 71--77)}
+
+\begin{minted}{cpp}
+static const char* WIFI_FILE = "/wifi.json";
+static const char* GSM_FILE = "/gsm.json";
+static const char* USER_FILE = "/user.json";
+static const char* EMAIL_FILE = "/email.json";
+static const char* DEFAULT_AP_SSID = "Config panel";
+static const char* DEFAULT_AP_PASS = "12345678";
+\end{minted}
+
+\paragraph{Lines 71--74: SPIFFS file paths}
+JSON configuration files stored in root directory. Each module (WiFi, GSM, User, Email) has dedicated storage.
+
+\paragraph{Lines 75--76: AP defaults}
+Fallback credentials when configuration is missing or invalid. \texttt{DEFAULT\_AP\_PASS} meets WPA2 8-character minimum.
+
+\subsection{WiFi Scan Cache (Lines 81--83)}
+
+\begin{minted}{cpp}
+String lastScanJson;
+bool lastScanAvailable = false;
+\end{minted}
+
+\paragraph{Line 81: Scan result storage}
+Cached JSON string from last WiFi scan. Avoids re-serialization on multiple \texttt{/api/wifi/scan/results} requests.
+
+\paragraph{Line 82: Cache validity flag}
+\texttt{true} after successful scan processing. Prevents serving stale/uninitialized data.
+
+\subsection{WiFi Scan Processing Function (Lines 87--126)}
+
+\begin{minted}{cpp}
+void processWiFiScanResults() {
+  int n = WiFi.scanComplete();
+  if (n == WIFI_SCAN_FAILED) {
+    Serial.println(" WiFi scan failed");
+    lastScanAvailable = false;
+    return;
+  }
+  
+  if (n == 0) {
+    Serial.println(" No networks found");
+    lastScanJson = "[]";
+    lastScanAvailable = true;
+    return;
+  }
+  
+  Serial.printf(" Found %d networks\n", n);
+  
+  DynamicJsonDocument doc(2048);
+  JsonArray networks = doc.to<JsonArray>();
+  
+  for (int i = 0; i < n; i++) {
+    JsonObject network = networks.createNestedObject();
+    network["ssid"] = WiFi.SSID(i);
+    network["rssi"] = WiFi.RSSI(i);
+    network["encryption"] = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) 
+                            ? "Open" : "Secure";
+    network["auth"] = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? 0 : 1;
+    
+    int rssi = WiFi.RSSI(i);
+    if (rssi >= -60) network["strength"] = "strong";
+    else if (rssi >= -75) network["strength"] = "medium";
+    else network["strength"] = "weak";
+  }
+  
+  serializeJson(doc, lastScanJson);
+  lastScanAvailable = true;
+  WiFi.scanDelete();
+}
+\end{minted}
+
+\paragraph{Lines 88--94: Scan failure handling}
+Checks \texttt{WiFi.scanComplete()} return value. \texttt{WIFI\_SCAN\_FAILED} indicates error; clears cache flag.
+
+\paragraph{Lines 96--101: Empty scan result}
+If no networks found, returns valid empty JSON array \texttt{[]}. Sets cache flag to prevent error state.
+
+\paragraph{Lines 106--107: JSON document allocation}
+Allocates 2KB document for network array. Sufficient for ~15 networks with metadata.
+
+\paragraph{Lines 109--122: Network iteration}
+Builds JSON object per network with:
+\begin{itemize}[leftmargin=*]
+  \item \texttt{ssid}: Network name
+  \item \texttt{rssi}: Signal strength in dBm
+  \item \texttt{encryption}: "Open" or "Secure" (simplified)
+  \item \texttt{auth}: Binary flag (0=open, 1=secured)
+  \item \texttt{strength}: Human-readable quality (strong/medium/weak)
+\end{itemize}
+
+\paragraph{Lines 117--120: Signal strength classification}
+RSSI thresholds:
+\begin{itemize}[leftmargin=*]
+  \item $\geq -60$ dBm: "strong" (excellent connection)
+  \item $-75$ to $-60$ dBm: "medium" (good connection)
+  \item $< -75$ dBm: "weak" (marginal connection)
+\end{itemize}
+
+\paragraph{Lines 124--126: Cache update and cleanup}
+Serializes JSON to \texttt{lastScanJson}, sets validity flag, calls \texttt{WiFi.scanDelete()} to free memory.
+
+\subsection{WifiConfig Structure (Lines 136--176)}
+
+\begin{minted}{cpp}
+struct WifiConfig {
+  String staSsid;  // Station mode SSID (client mode)
+  String staPass;  // Station mode password
+  String apSsid;   // Access Point SSID
+  String apPass;   // Access Point password
+
+  bool load() {
+    if (!SPIFFS.exists(WIFI_FILE)) return false;
+    File f = SPIFFS.open(WIFI_FILE, "r");
+    if (!f) return false;
+    DynamicJsonDocument doc(1024);
+    if (deserializeJson(doc, f)) { f.close(); return false; }
+    f.close();
+    staSsid = doc["staSsid"] | "";
+    staPass = doc["staPass"] | "";
+    apSsid = doc["apSsid"] | DEFAULT_AP_SSID;
+    apPass = doc["apPass"] | DEFAULT_AP_PASS;
+    return true;
+  }
+
+  bool save() const {
+    DynamicJsonDocument doc(1024);
+    doc["staSsid"] = staSsid;
+    doc["staPass"] = staPass;
+    doc["apSsid"] = apSsid.length() ? apSsid : DEFAULT_AP_SSID;
+    doc["apPass"] = apPass.length() ? apPass : DEFAULT_AP_PASS;
+    File f = SPIFFS.open(WIFI_FILE, "w");
+    if (!f) return false;
+    serializeJson(doc, f);
+    f.close();
+    return true;
+  }
+} wifiCfg;
+\end{minted}
+
+\paragraph{Lines 137--141: Member variables}
+Stores both Station (client) and AP (hotspot) credentials. Allows ESP32 to simultaneously provide configuration portal and connect to internet.
+
+\paragraph{Lines 143--157: \texttt{load()} method}
+Loads from \texttt{/wifi.json}:
+\begin{enumerate}[leftmargin=*]
+  \item Check file existence (line 144)
+  \item Open for reading (line 145)
+  \item Deserialize JSON (line 148)
+  \item Extract fields with defaults using \texttt{|} operator (lines 150--153)
+  \item Return success/failure
+\end{enumerate}
+
+\paragraph{Lines 159--173: \texttt{save()} method}
+Persists to \texttt{/wifi.json}:
+\begin{enumerate}[leftmargin=*]
+  \item Populate JSON document (lines 161--164)
+  \item Apply defaults for empty fields (lines 163--164)
+  \item Open file for writing (line 165)
+  \item Serialize and close (lines 167--169)
+\end{enumerate}
+
+\paragraph{Line 175: Global instance}
+\texttt{wifiCfg} instantiated globally for access from API handlers.
+
+\subsection{GsmConfig Structure (Lines 182--222)}
+
+\begin{minted}{cpp}
+struct GsmConfig {
+  String carrierName;  // Network carrier name
+  String apn;          // Access Point Name for data
+  String apnUser;      // APN username (if required)
+  String apnPass;      // APN password (if required)
+
+  bool load() {
+    if (!SPIFFS.exists(GSM_FILE)) return false;
+    File f = SPIFFS.open(GSM_FILE, "r");
+    if (!f) return false;
+    DynamicJsonDocument doc(1024);
+    if (deserializeJson(doc, f)) { f.close(); return false; }
+    f.close();
+    carrierName = doc["carrierName"] | "";
+    apn = doc["apn"] | "";
+    apnUser = doc["apnUser"] | "";
+    apnPass = doc["apnPass"] | "";
+    return true;
+  }
+
+  bool save() const {
+    DynamicJsonDocument doc(1024);
+    doc["carrierName"] = carrierName;
+    doc["apn"] = apn;
+    doc["apnUser"] = apnUser;
+    doc["apnPass"] = apnPass;
+    File f = SPIFFS.open(GSM_FILE, "w");
+    if (!f) return false;
+    serializeJson(doc, f);
+    f.close();
+    return true;
+  }
+} gsmCfg;
+\end{minted}
+
+\paragraph{Lines 183--187: GSM parameters}
+\begin{itemize}[leftmargin=*]
+  \item \texttt{carrierName}: User-friendly label (e.g., "Dialog", "Mobitel")
+  \item \texttt{apn}: Network APN for GPRS (e.g., "internet", "data.mobile")
+  \item \texttt{apnUser}/\texttt{apnPass}: Credentials if carrier requires authentication
+\end{itemize}
+
+\paragraph{Lines 189--217: Load/save implementation}
+Identical pattern to \texttt{WifiConfig}. Stores to \texttt{/gsm.json}.
+
+\subsection{UserConfig and EmailConfig Structures (Lines 228--322)}
+
+\textit{(Similar structure to above; omitting detailed breakdown for brevity. See full code for implementation.)}
+
+\paragraph{UserConfig (lines 228--265)}
+Stores user profile: name, email, phone. Persisted to \texttt{/user.json}.
+
+\paragraph{EmailConfig (lines 271--322)}
+SMTP settings with validation:
+\begin{itemize}[leftmargin=*]
+  \item \texttt{smtpHost}: SMTP server hostname (default: \texttt{smtp.gmail.com})
+  \item \texttt{smtpPort}: Port number (default: 465 for SSL)
+  \item \texttt{emailAccount}: Email address for authentication
+  \item \texttt{emailPassword}: App-specific password
+  \item \texttt{senderName}: Display name in email headers
+  \item \texttt{isValid()}: Returns \texttt{true} if all required fields populated
+\end{itemize}
+
+\subsection{SensorData Structure (Lines 331--377)}
+
+\begin{minted}{cpp}
+struct SensorData {
+  float temperature = 22.5;    // Temperature in Celsius
+  float humidity = 65.0;        // Humidity percentage
+  float light = 850.0;          // Light level in lux
+  unsigned long lastUpdate = 0;
+  const unsigned long UPDATE_INTERVAL = 3000;
+  
+  void update() {
+    if (millis() - lastUpdate > UPDATE_INTERVAL) {
+      temperature += (random(-20, 21) / 100.0);
+      temperature = constrain(temperature, 18.0, 32.0);
+      
+      humidity += (random(-30, 31) / 100.0);
+      humidity = constrain(humidity, 30.0, 90.0);
+      
+      light += (random(-200, 201) / 10.0);
+      light = constrain(light, 0.0, 2000.0);
+      
+      lastUpdate = millis();
+    }
+  }
+  
+  String toJson() {
+    DynamicJsonDocument doc(256);
+    doc["temperature"] = round(temperature * 10) / 10.0;
+    doc["humidity"] = round(humidity * 10) / 10.0;
+    doc["light"] = round(light);
+    doc["timestamp"] = millis();
+    String out;
+    serializeJson(doc, out);
+    return out;
+  }
+} sensorData;
+\end{minted}
+
+\paragraph{Lines 332--335: Sensor state}
+Simulated environmental readings:
+\begin{itemize}[leftmargin=*]
+  \item Temperature: 18--32°C range
+  \item Humidity: 30--90\% range
+  \item Light: 0--2000 lux range
+\end{itemize}
+
+\paragraph{Lines 339--358: \texttt{update()} method}
+Applies realistic drift every 3 seconds:
+\begin{itemize}[leftmargin=*]
+  \item Temperature: $\pm0.2$°C per update
+  \item Humidity: $\pm0.3$\% per update
+  \item Light: $\pm20$ lux per update
+\end{itemize}
+Uses \texttt{constrain()} to enforce physical limits.
+
+\paragraph{Lines 363--373: \texttt{toJson()} method}
+Serializes current readings with timestamp. Rounds temperature/humidity to 1 decimal place, light to integer.
+
+\subsection{Sensor Test Sampling Helper (Lines 387--417)}
+
+\begin{minted}{cpp}
+String buildSensorTestSamplesJson(size_t sampleCount) {
+  float t = sensorData.temperature;
+  float h = sensorData.humidity;
+  float l = sensorData.light;
+
+  DynamicJsonDocument doc(1024);
+  JsonArray arr = doc.to<JsonArray>();
+
+  for (size_t i = 0; i < sampleCount; i++) {
+    t += (random(-20, 21) / 100.0f);
+    t = constrain(t, 18.0f, 32.0f);
+
+    h += (random(-30, 31) / 100.0f);
+    h = constrain(h, 30.0f, 90.0f);
+
+    l += (random(-200, 201) / 10.0f);
+    l = constrain(l, 0.0f, 2000.0f);
+
+    JsonObject sample = arr.createNestedObject();
+    sample["temperature"] = round(t * 10) / 10.0;
+    sample["humidity"] = round(h * 10) / 10.0;
+    sample["light"] = round(l);
+    sample["index"] = (int)i;
+  }
+
+  String out;
+  serializeJson(doc, out);
+  return out;
+}
+\end{minted}
+
+\paragraph{Lines 388--391: Local state copies}
+Creates temporary variables initialized from live \texttt{sensorData}. Prevents mutation of global state during sampling.
+
+\paragraph{Lines 393--395: JSON array preparation}
+Allocates 1KB document (sufficient for 10 samples with metadata). Creates root array.
+
+\paragraph{Lines 397--414: Sample generation loop}
+Generates \texttt{sampleCount} (typically 10) readings with simulated drift:
+\begin{enumerate}[leftmargin=*]
+  \item Apply random delta to each parameter (lines 398--405)
+  \item Create JSON object with rounded values (lines 407--411)
+  \item Add sample index for client-side ordering (line 412)
+\end{enumerate}
+
+\paragraph{Lines 416--418: Serialization}
+Converts JSON document to string and returns. Used by \texttt{/api/sensors/test} endpoint.
+
+\subsection{GSMCache Structure (Lines 424--442)}
+
+\begin{minted}{cpp}
+struct GSMCache {
+  int signalStrength = 0;
+  int signalQuality = 99;
+  String grade = "Unknown";
+  String carrierName = "Unknown";
+  String networkMode = "Unknown";
+  bool isRegistered = false;
+  unsigned long lastUpdate = 0;
+  const unsigned long UPDATE_INTERVAL = 300000;  // 5 minutes
+
+  bool needsUpdate(bool forceRefresh = false) {
+    return forceRefresh || (millis() - lastUpdate) > UPDATE_INTERVAL;
+  }
+
+  void updateSignal(bool forceRefresh = false) {
+    if (needsUpdate(forceRefresh)) {
+      signalStrength = gsmModem.getSignalStrength();
+      if (signalStrength != 0) {
+        signalQuality = (signalStrength + 113) / 2;
+        if (signalQuality < 0) signalQuality = 0;
+        if (signalQuality > 31) signalQuality = 31;
+        
+        if (signalQuality >= 20) grade = "Excellent";
+        else if (signalQuality >= 15) grade = "Good";
+        else if (signalQuality >= 10) grade = "Fair";
+        else grade = "Poor";
+      }
+      lastUpdate = millis();
+    }
+  }
+
+  void updateNetwork(bool forceRefresh = false) {
+    if (needsUpdate(forceRefresh)) {
+      GSM_Test::NetworkInfo networkInfo = gsmModem.detectCarrierNetwork();
+      carrierName = networkInfo.carrierName;
+      networkMode = networkInfo.networkMode;
+      isRegistered = networkInfo.isRegistered;
+      lastUpdate = millis();
+    }
+  }
+} gsmCache;
+\end{minted}
+
+\paragraph{Lines 425--432: Cache state}
+Stores GSM telemetry with 5-minute TTL:
+\begin{itemize}[leftmargin=*]
+  \item \texttt{signalStrength}: RSSI in dBm
+  \item \texttt{signalQuality}: CSQ value (0--31 scale)
+  \item \texttt{grade}: Human-readable quality
+  \item \texttt{carrierName}: Network operator name
+  \item \texttt{networkMode}: Technology (GSM/EDGE/UMTS/LTE)
+  \item \texttt{isRegistered}: Network registration status
+\end{itemize}
+
+\paragraph{Lines 434--436: \texttt{needsUpdate()} helper}
+Returns \texttt{true} if cache expired or force refresh requested. Prevents excessive modem queries.
+
+\paragraph{Lines 438--453: \texttt{updateSignal()} method}
+Queries modem for signal strength and converts dBm to CSQ scale:
+\begin{equation}
+\text{CSQ} = \frac{\text{RSSI} + 113}{2}, \quad \text{clamped to } [0, 31]
+\end{equation}
+Classifies quality: Excellent ($\geq 20$), Good ($\geq 15$), Fair ($\geq 10$), Poor ($< 10$).
+
+\paragraph{Lines 455--463: \texttt{updateNetwork()} method}
+Fetches carrier information via modem's network detection routine. Updates cache with operator name, technology, and registration status.
+
+\subsection{Utility Functions (Lines 453--508)}
+
+\begin{minted}{cpp}
+String ipToStr(const IPAddress &ip) {
+  char buf[24];
+  snprintf(buf, sizeof(buf), "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
+  return String(buf);
+}
+
+void addCORS() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+  server.sendHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  server.sendHeader("Cache-Control", "no-store");
+}
+
+void sendJson(int code, const String& body) {
+  addCORS();
+  server.send(code, "application/json", body);
+}
+
+void sendText(int code, const String& body, const String& ctype = "text/plain") {
+  addCORS();
+  server.send(code, ctype, body);
+}
+\end{minted}
+
+\paragraph{Lines 453--457: \texttt{ipToStr()} function}
+Converts ESP32's \texttt{IPAddress} object to dotted-decimal string notation. Uses \texttt{snprintf} for safe formatting. Returns heap-allocated \texttt{String} for API responses.
+
+\paragraph{Lines 459--464: \texttt{addCORS()} function}
+Adds Cross-Origin Resource Sharing headers to HTTP responses:
+\begin{itemize}[leftmargin=*]
+  \item \texttt{Access-Control-Allow-Origin: *}: Permits requests from any domain
+  \item \texttt{Access-Control-Allow-Headers: Content-Type}: Allows JSON payloads
+  \item \texttt{Access-Control-Allow-Methods}: Permits GET, POST, OPTIONS
+  \item \texttt{Cache-Control: no-store}: Prevents browser caching of dynamic data
+\end{itemize}
+
+\paragraph{Lines 466--469: \texttt{sendJson()} helper}
+Wraps \texttt{WebServer::send()} with automatic CORS headers and \texttt{application/json} content type. Used by all REST API endpoints.
+
+\paragraph{Lines 471--474: \texttt{sendText()} helper}
+Similar to \texttt{sendJson()} but with configurable content type (defaults to \texttt{text/plain}). Used for error messages and captive portal redirects.
+
+\subsection{WiFi Management Functions (Lines 476--508)}
+
+\begin{minted}{cpp}
+void startAP(const String& ssid, const String& pass) {
+  WiFi.mode(WIFI_AP_STA);
+  WiFi.softAPConfig(IPAddress(192, 168, 4, 1), 
+                    IPAddress(192, 168, 4, 1), 
+                    IPAddress(255, 255, 255, 0));
+  
+  String validPass = pass;
+  if (validPass.length() < 8) {
+    validPass = DEFAULT_AP_PASS;
+  }
+  
+  bool ap_ok = WiFi.softAP(ssid.c_str(), validPass.c_str());
+  if (!ap_ok) {
+    Serial.println(" Failed to start AP, using defaults");
+    WiFi.softAP(DEFAULT_AP_SSID, DEFAULT_AP_PASS);
+  }
+  delay(500);
+  dnsServer.start(DNS_PORT, "*", WiFi.softAPIP());
+}
+
+void connectSTA(const String& ssid, const String& pass) {
+  if (!ssid.length()) return;
+  WiFi.begin(ssid.c_str(), pass.c_str());
+}
+
+const char* rssiToStrength(int rssi) {
+  if (rssi >= -60) return "strong";
+  if (rssi >= -75) return "medium";
+  return "weak";
+}
+\end{minted}
+
+\paragraph{Lines 476--494: \texttt{startAP()} function}
+Initializes Access Point mode:
+\begin{enumerate}[leftmargin=*]
+  \item Sets dual mode (AP + STA) on line 477
+  \item Configures static IP 192.168.4.1/24 (lines 478--480)
+  \item Validates password length ($\geq 8$ chars for WPA2, lines 482--485)
+  \item Attempts AP creation with provided credentials (line 487)
+  \item Falls back to defaults on failure (lines 488--491)
+  \item Starts DNS server for captive portal (line 493)
+\end{enumerate}
+
+\paragraph{Lines 496--499: \texttt{connectSTA()} function}
+Non-blocking WiFi connection initiation. Returns immediately; connection status checked via \texttt{WiFi.status()} in API handlers.
+
+\paragraph{Lines 501--505: \texttt{rssiToStrength()} function}
+Converts RSSI (Received Signal Strength Indicator) to qualitative labels using standard thresholds.
+
+\subsection{Email Sending Function (Lines 510--538)}
+
+\begin{minted}{cpp}
+bool sendEmailGSM(const String& toEmail, const String& subject, 
+                  const String& content) {
+  Serial.println(" Sending email via GSM...");
+  
+  if (!emailCfg.isValid()) {
+    Serial.println("⚠ Email configuration incomplete");
+    return false;
+  }
+
+  smtp.begin();
+  smtp.setAPN(gsmCfg.apn.length() ? gsmCfg.apn.c_str() : "internet");
+  smtp.setAuth(emailCfg.emailAccount.c_str(), 
+               emailCfg.emailPassword.c_str());
+  smtp.setRecipient(toEmail.c_str());
+  smtp.setFromName(emailCfg.senderName.c_str());
+  smtp.setSubject(subject);
+  smtp.setBody(content);
+
+  return smtp.sendEmail();
+}
+\end{minted}
+
+\paragraph{Lines 510--538: GSM email implementation}
+Sends email via GPRS:
+\begin{enumerate}[leftmargin=*]
+  \item Validates email configuration (lines 514--517)
+  \item Initializes SMTP client (line 519)
+  \item Configures APN with fallback to "internet" (line 520)
+  \item Sets authentication credentials (lines 521--522)
+  \item Populates email headers and body (lines 523--526)
+  \item Executes SMTP transaction (line 528)
+\end{enumerate}
+
+Returns \texttt{true} on success, \texttt{false} on configuration error or transmission failure.
+
+\subsection{System Status Builder (Lines 581--621)}
+
+\begin{minted}{cpp}
+String buildStatusJson() {
+  DynamicJsonDocument doc(1024);
+  doc["mode"] = "AP+STA";
+  doc["dashboardMode"] = (currentMode == MODE_MAIN) ? "main" : "email";
+
+  JsonObject ap = doc.createNestedObject("ap");
+  ap["ssid"] = WiFi.softAPSSID();
+  ap["ip"] = ipToStr(WiFi.softAPIP());
+  ap["mac"] = WiFi.softAPmacAddress();
+  ap["connectedDevices"] = WiFi.softAPgetStationNum();
+
+  JsonObject sta = doc.createNestedObject("sta");
+  bool staConnected = (WiFi.status() == WL_CONNECTED);
+  sta["ssid"] = staConnected ? WiFi.SSID() : "";
+  sta["connected"] = staConnected;
+  sta["ip"] = staConnected ? ipToStr(WiFi.localIP()) : "0.0.0.0";
+  sta["rssi"] = staConnected ? WiFi.RSSI() : 0;
+  sta["hostname"] = WiFi.getHostname() ? WiFi.getHostname() : "";
+
+  if (staConnected) {
+    String statusMsg = "Connected to " + WiFi.SSID();
+    sta["status"] = statusMsg;
+    sta["statusClass"] = "status-connected";
+  } else {
+    sta["status"] = "Not connected";
+    sta["statusClass"] = "status-disconnected";
+  }
+
+  JsonObject email = doc.createNestedObject("email");
+  email["configured"] = emailCfg.isValid();
+  email["account"] = emailCfg.emailAccount;
+
+  String out;
+  serializeJson(doc, out);
+  return out;
+}
+\end{minted}
+
+\paragraph{Lines 581--621: Complete system status}
+Builds comprehensive JSON response for \texttt{/api/status}:
+
+\textbf{Access Point section (lines 585--589):}
+\begin{itemize}[leftmargin=*]
+  \item Current AP SSID (may differ from configured if defaults used)
+  \item AP IP address (typically 192.168.4.1)
+  \item MAC address
+  \item Number of connected client devices
+\end{itemize}
+
+\textbf{Station section (lines 591--606):}
+\begin{itemize}[leftmargin=*]
+  \item Connection status and SSID
+  \item Assigned IP address (0.0.0.0 if disconnected)
+  \item Signal strength (RSSI)
+  \item mDNS hostname
+  \item Human-readable status message
+  \item CSS class for UI styling (\texttt{status-connected}/\texttt{status-disconnected})
+\end{itemize}
+
+\textbf{Email section (lines 608--610):}
+\begin{itemize}[leftmargin=*]
+  \item Configuration validity flag
+  \item Email account (for display; password excluded)
+\end{itemize}
+
+\subsection{HTTP Route Handlers - Common (Lines 623--683)}
+
+\begin{minted}{cpp}
+void handleRoot() {
+  addCORS();
+  if (currentMode == MODE_MAIN) {
+    server.send_P(200, "text/html", dashboard_html, dashboard_html_len);
+  } else {
+    server.send_P(200, "text/html", config_html, config_html_len);
+  }
+}
+
+void handleOptions() {
+  addCORS();
+  server.send(204);
+}
+
+void handleNotFound() {
+  String host = server.hostHeader();
+  
+  if (host.startsWith("connectivitycheck.") || 
+      host.startsWith("captive.apple.com") ||
+      host.startsWith("msftconnecttest.") || 
+      host.startsWith("detectportal.")) {
+    addCORS();
+    server.sendHeader("Location", "http://" + WiFi.softAPIP().toString() + "/");
+    server.send(302, "text/plain", "");
+  } else {
+    handleRoot();
+  }
+}
+\end{minted}
+
+\paragraph{Lines 623--631: \texttt{handleRoot()} function}
+Serves appropriate dashboard based on \texttt{currentMode}:
+\begin{itemize}[leftmargin=*]
+  \item Uses \texttt{server.send\_P()} to transmit from PROGMEM (flash storage)
+  \item Avoids copying large HTML to RAM
+  \item Dashboard selected by DRD at boot
+\end{itemize}
+
+\paragraph{Lines 633--636: \texttt{handleOptions()} function}
+Handles CORS preflight requests (HTTP OPTIONS method). Returns 204 No Content with CORS headers.
+
+\paragraph{Lines 638--652: \texttt{handleNotFound()} function}
+Captive portal magic:
+\begin{itemize}[leftmargin=*]
+  \item Detects OS-specific connectivity check URLs (lines 641--644)
+  \item Redirects to dashboard (302 Found) for captive portal detection
+  \item Serves dashboard for unknown paths (default behavior)
+\end{itemize}
+
+Supports:
+\begin{itemize}[leftmargin=*]
+  \item Android: \texttt{connectivitycheck.*}
+  \item iOS/macOS: \texttt{captive.apple.com}
+  \item Windows: \texttt{msftconnecttest.*}
+  \item Generic: \texttt{detectportal.*}
+\end{itemize}
+
+\subsection{Mode Switching Handlers (Lines 685--722)}
+
+\begin{minted}{cpp}
+void handleSwitchMode() {
+  DynamicJsonDocument doc(256);
+  doc["currentMode"] = (currentMode == MODE_MAIN) ? "main" : "email";
+  doc["message"] = "To switch modes, perform a double reset";
+  String out;
+  serializeJson(doc, out);
+  sendJson(200, out);
+}
+
+void handleModeSwitchRequest() {
+  if (!server.hasArg("plain")) {
+    sendText(400, "Invalid JSON");
+    return;
+  }
+  
+  DynamicJsonDocument doc(256);
+  if (deserializeJson(doc, server.arg("plain"))) {
+    sendText(400, "Invalid JSON");
+    return;
+  }
+  
+  String mode = doc["mode"] | "";
+  if (mode != "main" && mode != "email") {
+    sendText(400, "Invalid mode. Use 'main' or 'email'");
+    return;
+  }
+  
+  DynamicJsonDocument resp(256);
+  resp["success"] = false;
+  resp["message"] = "Mode switching requires device reset. Double-reset to switch.";
+  resp["currentMode"] = (currentMode == MODE_MAIN) ? "main" : "email";
+  String out;
+  serializeJson(resp, out);
+  sendJson(200, out);
+}
+\end{minted}
+
+\paragraph{Lines 685--693: \texttt{handleSwitchMode()} (GET /api/mode)}
+Informational endpoint returning current mode and switching instructions. No actual mode change performed.
+
+\paragraph{Lines 695--719: \texttt{handleModeSwitchRequest()} (POST /api/mode/switch)}
+Validates mode switch request but refuses runtime switching:
+\begin{enumerate}[leftmargin=*]
+  \item Validates JSON body (lines 696--700)
+  \item Parses requested mode (lines 702--706)
+  \item Validates mode value (lines 708--711)
+  \item Returns error explaining physical reset required (lines 713--719)
+\end{enumerate}
+
+Design rationale: Runtime mode switching would require complex state management. Physical reset ensures clean transition.
+
+\subsection{Main Dashboard Routes Setup (Lines 724--1265)}
+
+\begin{minted}{cpp}
+void setupMainDashboardRoutes() {
+  Serial.println("⚙ Setting up MAIN dashboard routes");
+  
+  // Status endpoint
+  server.on("/api/status", HTTP_GET, []() { 
+    sendJson(200, buildStatusJson()); 
+  });
+  
+  // Sensor endpoints
+  server.on("/api/sensors", HTTP_GET, []() {
+    sendJson(200, sensorData.toJson());
+  });
+
+  server.on("/api/sensors/test", HTTP_GET, []() {
+    sendJson(200, buildSensorTestSamplesJson(10));
+  });
+  
+  // System info endpoint
+  server.on("/api/system/info", HTTP_GET, []() {
+    DynamicJsonDocument doc(512);
+    doc["deviceModel"] = DEVICE_MODEL;
+    doc["firmwareVersion"] = FIRMWARE_VERSION;
+    doc["lastUpdated"] = LAST_UPDATED;
+    doc["uptime"] = millis();
+    doc["freeHeap"] = ESP.getFreeHeap();
+    doc["chipModel"] = ESP.getChipModel();
+    doc["chipRevision"] = ESP.getChipRevision();
+    doc["cpuFreqMHz"] = ESP.getCpuFreqMHz();
+    String out;
+    serializeJson(doc, out);
+    sendJson(200, out);
+  });
+  
+  // ... (GSM, WiFi, configuration endpoints follow)
+}
+\end{minted}
+
+\paragraph{Lines 724--730: Status endpoint (GET /api/status)}
+Returns complete system status via \texttt{buildStatusJson()}. Updated on every request (no caching).
+
+\paragraph{Lines 732--739: Sensor endpoints}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{GET /api/sensors}: Returns current sensor snapshot without mutation
+  \item \textbf{GET /api/sensors/test}: Generates 10 immediate test samples for UI validation
+\end{itemize}
+
+\paragraph{Lines 741--757: System info endpoint (GET /api/system/info)}
+Returns device metadata and runtime statistics:
+\begin{itemize}[leftmargin=*]
+  \item \texttt{deviceModel}: Hardware identifier
+  \item \texttt{firmwareVersion}: Software version
+  \item \texttt{lastUpdated}: Build date
+  \item \texttt{uptime}: Milliseconds since boot
+  \item \texttt{freeHeap}: Available RAM in bytes
+  \item \texttt{chipModel}: ESP32 variant (e.g., "ESP32-D0WDQ6")
+  \item \texttt{chipRevision}: Silicon revision
+  \item \texttt{cpuFreqMHz}: Clock speed (typically 240 MHz)
+\end{itemize}
+
+\paragraph{Lines 759--821: GSM signal endpoint (GET /api/gsm/signal)}
+\begin{minted}{cpp}
+server.on("/api/gsm/signal", HTTP_GET, []() {
+  bool forceRefresh = server.hasArg("force") && server.arg("force") == "true";
+  gsmCache.updateSignal(forceRefresh);
+  
+  DynamicJsonDocument doc(256);
+  doc["ok"] = (gsmCache.signalStrength != -999);
+  doc["dbm"] = gsmCache.signalStrength;
+  doc["csq"] = gsmCache.signalQuality;
+  doc["grade"] = gsmCache.grade;
+  String out;
+  serializeJson(doc, out);
+  sendJson(200, out);
+});
+\end{minted}
+
+Supports optional \texttt{?force=true} query parameter to bypass 5-minute cache. Returns signal strength in dBm, CSQ value, and quality grade.
+
+\paragraph{Lines 823--855: GSM network endpoint (GET /api/gsm/network)}
+Similar caching strategy. Returns carrier name, network mode (GSM/LTE/etc), and registration status.
+
+\paragraph{Lines 857--902: GSM call endpoints}
+\textbf{POST /api/gsm/call}: Initiates voice call
+\begin{minted}{cpp}
+server.on("/api/gsm/call", HTTP_POST, []() {
+  if (!server.hasArg("plain")) { 
+    sendText(400, "Invalid JSON"); 
+    return; 
+  }
+  
+  DynamicJsonDocument doc(256);
+  if (deserializeJson(doc, server.arg("plain"))) { 
+    sendText(400, "Invalid JSON"); 
+    return; 
+  }
+  
+  String phoneNumber = doc["phoneNumber"] | "";
+  if (!phoneNumber.length()) { 
+    // Error response
+    return; 
+  }
+  
+  bool success = gsmModem.makeCall(phoneNumber);
+  
+  if (success) {
+    delay(10000);  // 10-second call duration
+    gsmModem.hangupCall();
+  }
+  
+  // JSON response with success status
+});
+\end{minted}
+
+Automatically hangs up after 10 seconds to prevent indefinite connections.
+
+\textbf{POST /api/gsm/call/hangup}: Immediately terminates active call.
+
+\paragraph{Lines 904--968: GSM SMS endpoint (POST /api/gsm/sms)}
+Sends SMS message. Validates phone number and message content before transmission.
+
+\paragraph{Lines 970--1014: WiFi scan endpoints}
+\textbf{GET /api/wifi/scan}: Starts asynchronous scan
+\begin{minted}{cpp}
+server.on("/api/wifi/scan", HTTP_GET, []() {
+  Serial.println("�� Starting WiFi network scan...");
+  int n = WiFi.scanNetworks(true);  // true = async
+  
+  if (n == WIFI_SCAN_FAILED) {
+    sendJson(500, "{\"error\":\"Scan failed to start\"}");
+    return;
+  }
+  
+  DynamicJsonDocument doc(256);
+  doc["status"] = "scanning";
+  doc["message"] = "Scan started, use /api/wifi/scan/results";
+  String out;
+  serializeJson(doc, out);
+  sendJson(200, out);
+});
+\end{minted}
+
+Returns immediately with "scanning" status. Results retrieved via separate endpoint.
+
+\textbf{GET /api/wifi/scan/results}: Returns cached scan results from \texttt{lastScanJson}.
+
+\paragraph{Lines 1016--1133: WiFi connect/disconnect endpoints}
+\textbf{POST /api/wifi/connect}:
+\begin{enumerate}[leftmargin=*]
+  \item Validates SSID parameter
+  \item Disconnects from current network if connected
+  \item Initiates connection with 20-second timeout
+  \item Saves credentials to SPIFFS on success
+  \item Returns connection status and IP address
+\end{enumerate}
+
+\textbf{POST /api/wifi/disconnect}:
+\begin{enumerate}[leftmargin=*]
+  \item Disconnects from network
+  \item Clears saved credentials from SPIFFS
+  \item Returns success confirmation
+\end{enumerate}
+
+\paragraph{Lines 1135--1177: User configuration endpoints}
+\textbf{GET /api/load/user}: Returns user profile (name, email, phone)
+
+\textbf{POST /api/save/user}: Persists user profile to \texttt{/user.json}
+
+\paragraph{Lines 1179--1217: GSM configuration endpoints}
+\textbf{GET /api/load/gsm}: Returns GSM settings (carrier, APN, credentials)
+
+\textbf{POST /api/save/gsm}: Persists GSM configuration to \texttt{/gsm.json}
+
+\subsection{Email Dashboard Routes Setup (Lines 1228--1467)}
+
+\begin{minted}{cpp}
+void setupEmailDashboardRoutes() {
+  Serial.println("⚙ Setting up EMAIL dashboard routes");
+  
+  // Sensor endpoints (identical to main mode)
+  server.on("/api/sensors", HTTP_GET, []() {
+    sendJson(200, sensorData.toJson());
+  });
+
+  server.on("/api/sensors/test", HTTP_GET, []() {
+    sendJson(200, buildSensorTestSamplesJson(10));
+  });
+  
+  // System info (identical to main mode)
+  server.on("/api/system/info", HTTP_GET, []() { /* ... */ });
+  
+  // AP configuration endpoints
+  server.on("/api/load/ap", HTTP_GET, []() { /* ... */ });
+  server.on("/api/save/ap", HTTP_POST, []() { /* ... */ });
+  
+  // Email configuration endpoints
+  server.on("/api/load/email", HTTP_GET, []() { /* ... */ });
+  server.on("/api/save/email", HTTP_POST, []() { /* ... */ });
+  
+  // Email sending endpoints
+  server.on("/api/email/gsm/send", HTTP_POST, []() { /* ... */ });
+  server.on("/api/email/send", HTTP_POST, []() { /* ... */ });
+}
+\end{minted}
+
+\paragraph{Lines 1228--1265: Sensor and system info}
+Identical implementations to main dashboard. Allows email configuration UI to include device monitoring.
+
+\paragraph{Lines 1267--1329: AP configuration endpoints}
+\textbf{GET /api/load/ap}: Returns current AP SSID, password, IP, and connected device count
+
+\textbf{POST /api/save/ap}:
+\begin{enumerate}[leftmargin=*]
+  \item Validates SSID (non-empty, $\leq 32$ chars)
+  \item Validates password ($\geq 8$ chars or empty)
+  \item Saves to SPIFFS
+  \item Returns message: "Restart required to apply changes"
+\end{enumerate}
+
+\paragraph{Lines 1331--1395: Email configuration endpoints}
+\textbf{GET /api/load/email}: Returns SMTP settings (excludes password for security)
+
+\textbf{POST /api/save/email}:
+\begin{enumerate}[leftmargin=*]
+  \item Updates SMTP host, port, account, sender name
+  \item Only updates password if provided in request
+  \item Allows partial updates without requiring password re-entry
+  \item Persists to \texttt{/email.json}
+\end{enumerate}
+
+\paragraph{Lines 1397--1467: Email sending endpoints}
+\textbf{POST /api/email/gsm/send}: Dedicated GSM email endpoint
+
+\textbf{POST /api/email/send?via=gsm}: Alternative endpoint with method parameter
+
+Both validate recipient, subject, content and call \texttt{sendEmailGSM()}.
+
+\subsection{Setup Function (Lines 1477--1693)}
+
+\begin{minted}{cpp}
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+  
+  // Double Reset Detection
+  Serial.println("╔════════════════════════════════════════╗");
+  Serial.println("║  ESP32 Configuration Panel with DRD   ║");
+  Serial.println("╚════════════════════════════════════════╝");
+  
+  bool doubleResetDetected = drd.detectDoubleReset();
+  
+  if (doubleResetDetected) {
+    currentMode = MODE_EMAIL;
+    Serial.println(" DOUBLE RESET DETECTED!");
+    Serial.println(" Loading EMAIL Configuration Dashboard");
+  } else {
+    currentMode = MODE_MAIN;
+    Serial.println(" Single reset detected");
+    Serial.println(" Loading MAIN Dashboard");
+  }
+  
+  // SPIFFS initialization
+  if (!SPIFFS.begin(true)) {
+    Serial.println(" SPIFFS mount failed");
+  } else {
+    Serial.println(" SPIFFS mounted successfully");
+  }
+  
+  // Load configurations
+  wifiCfg.load();
+  gsmCfg.load();
+  userCfg.load();
+  emailCfg.load();
+  
+  // Start WiFi AP
+  String apSsid = (currentMode == MODE_MAIN && wifiCfg.apSsid.length()) 
+                  ? wifiCfg.apSsid : DEFAULT_AP_SSID;
+  String apPass = (currentMode == MODE_MAIN && wifiCfg.apPass.length()) 
+                  ? wifiCfg.apPass : DEFAULT_AP_PASS;
+  startAP(apSsid, apPass);
+  
+  // Connect to WiFi STA if configured
+  if (wifiCfg.staSsid.length()) {
+    connectSTA(wifiCfg.staSsid, wifiCfg.staPass);
+  }
+  
+  // Initialize GSM (main mode only)
+  if (currentMode == MODE_MAIN) {
+    Serial.println("\n Initializing GSM modem...");
+    gsmModem.begin();
+    delay(2000);
+  }
+  
+  // Setup web server routes
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/index.html", HTTP_GET, handleRoot);
+  server.on("/config", HTTP_GET, handleRoot);
+  
+  // Captive portal endpoints
+  server.on("/generate_204", HTTP_GET, []() { /* Android */ });
+  server.on("/ncsi.txt", HTTP_GET, []() { /* Windows */ });
+  server.on("/hotspot-detect.html", HTTP_GET, handleRoot); /* iOS */
+  
+  // Mode management
+  server.on("/api/mode", HTTP_GET, handleSwitchMode);
+  server.on("/api/mode/switch", HTTP_POST, handleModeSwitchRequest);
+  server.on("/api/restart", HTTP_GET, []() {
+    sendText(200, "Restarting ESP32...");
+    delay(200);
+    ESP.restart();
+  });
+  
+  // Common status endpoint
+  server.on("/api/status", HTTP_GET, []() { 
+    sendJson(200, buildStatusJson()); 
+  });
+  
+  // Setup mode-specific routes
+  if (currentMode == MODE_MAIN) {
+    setupMainDashboardRoutes();
+  } else {
+    setupEmailDashboardRoutes();
+  }
+  
+  // CORS OPTIONS handlers for all endpoints
+  server.on("/api/status", HTTP_OPTIONS, handleOptions);
+  // ... (additional OPTIONS handlers)
+  
+  // Error handlers
+  server.onNotFound(handleNotFound);
+  
+  // Start server
+  server.begin();
+  Serial.println(" HTTP server started");
+  
+  Serial.println("\n╔════════════════════════════════════════╗");
+  Serial.println("║         SYSTEM READY                   ║");
+  Serial.println("╚════════════════════════════════════════╝");
+  Serial.printf(" Portal URL: http://%s\n", ipToStr(WiFi.softAPIP()).c_str());
+  Serial.printf(" Dashboard Mode: %s\n", 
+                (currentMode == MODE_MAIN) ? "MAIN" : "EMAIL");
+}
+\end{minted}
+
+\paragraph{Lines 1477--1500: Initialization and DRD}
+\begin{enumerate}[leftmargin=*]
+  \item Initialize serial console at 115200 baud (line 1478)
+  \item Print banner (lines 1482--1485)
+  \item Detect double reset via DRD\_Manager (line 1487)
+  \item Set \texttt{currentMode} based on detection result (lines 1489--1497)
+\end{enumerate}
+
+\paragraph{Lines 1502--1509: SPIFFS mounting}
+Attempts to mount filesystem with \texttt{formatOnFail=true}. Formats flash partition if corrupted.
+
+\paragraph{Lines 1511--1515: Configuration loading}
+Loads all configuration files from SPIFFS. Missing files return gracefully with empty/default values.
+
+\paragraph{Lines 1517--1530: WiFi AP startup}
+\begin{enumerate}[leftmargin=*]
+  \item Selects SSID/password based on mode and configuration
+  \item Email mode always uses default AP for consistency
+  \item Main mode uses configured AP if available
+  \item Starts DNS server for captive portal
+\end{enumerate}
+
+\paragraph{Lines 1532--1535: WiFi STA connection}
+Initiates connection to saved network if configured. Non-blocking; status checked later.
+
+\paragraph{Lines 1537--1542: GSM initialization}
+Only initialized in main mode:
+\begin{enumerate}[leftmargin=*]
+  \item Calls \texttt{gsmModem.begin()} to initialize serial and modem
+  \item 2-second delay allows modem to boot and stabilize
+  \item Email mode skips GSM init to save boot time
+\end{enumerate}
+
+\paragraph{Lines 1544--1580: Route registration}
+\begin{enumerate}[leftmargin=*]
+  \item Common routes: root, status, mode switching (lines 1545--1561)
+  \item Captive portal endpoints for multiple OS (lines 1563--1569)
+  \item Mode-specific routes via helper functions (lines 1573--1577)
+  \item CORS preflight handlers for all API endpoints (lines 1579--1619)
+\end{enumerate}
+
+\paragraph{Lines 1621--1625: Server startup}
+\begin{enumerate}[leftmargin=*]
+  \item Register 404 handler for unknown paths (line 1621)
+  \item Start HTTP server (line 1623)
+  \item Print confirmation message (line 1624)
+\end{enumerate}
+
+\paragraph{Lines 1627--1641: Startup complete message}
+Prints formatted box with portal URL, dashboard mode, and usage instructions.
+
+\subsection{Loop Function (Lines 1703--1766)}
+
+\begin{minted}{cpp}
+void loop() {
+  // Network handling
+  dnsServer.processNextRequest();  // Handle DNS requests for captive portal
+  server.handleClient();            // Handle HTTP requests
+  
+  // WiFi scan processing
+  if (WiFi.scanComplete() >= 0) {
+    processWiFiScanResults();
+  }
+  
+  // Double reset detection
+  drd.loop();  // Auto-clear DRD flag after timeout
+  
+  // Periodic status logging
+  static unsigned long lastStatusPrint = 0;
+  const unsigned long STATUS_INTERVAL = 30000;  // 30 seconds
+  
+  if (millis() - lastStatusPrint > STATUS_INTERVAL) {
+    lastStatusPrint = millis();
+    
+    Serial.printf("\n�� Status Update [%s mode]\n", 
+                  (currentMode == MODE_MAIN) ? "MAIN" : "EMAIL");
+    
+    // Access Point status
+    Serial.printf("  AP IP: %s\n", ipToStr(WiFi.softAPIP()).c_str());
+    Serial.printf("  Connected devices: %d\n", WiFi.softAPgetStationNum());
+    
+    // Station mode status
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.printf("  STA IP: %s\n", ipToStr(WiFi.localIP()).c_str());
+      Serial.printf("  RSSI: %d dBm (%s)\n", WiFi.RSSI(), 
+                    rssiToStrength(WiFi.RSSI()));
+    } else {
+      Serial.println("  STA: Not connected");
+    }
+    
+    // Email configuration status (only in EMAIL mode)
+    if (currentMode == MODE_EMAIL) {
+      Serial.printf("  Email: %s\n", 
+                    emailCfg.isValid() ? "Configured ✓" : "Not configured ✗");
+    }
+    
+    // GSM status (only in MAIN mode)
+    if (currentMode == MODE_MAIN) {
+      if (gsmCache.signalStrength != 0) {
+        Serial.printf("  GSM Signal: %d dBm (%s)\n", 
+                      gsmCache.signalStrength, 
+                      gsmCache.grade.c_str());
+        Serial.printf("  GSM Carrier: %s\n", gsmCache.carrierName.c_str());
+      } else {
+        Serial.println("  GSM: Not initialized");
+      }
+    }
+    
+    Serial.println("────────────────────────────────────────");
+  }
+}
+\end{minted}
+
+\paragraph{Lines 1704--1705: DNS and HTTP processing}
+Core network event loop. Must be called frequently to maintain responsiveness:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{dnsServer.processNextRequest()}: Handles captive portal DNS queries. Redirects all DNS lookups to ESP32's IP (192.168.4.1), forcing client devices to open configuration portal.
+  \item \textbf{server.handleClient()}: Processes incoming HTTP requests. Synchronous; blocks until request completed. Typical request duration: 5--50ms depending on endpoint.
+\end{itemize}
+
+\paragraph{Lines 1707--1710: Asynchronous WiFi scan completion}
+Monitors scan state machine:
+\begin{itemize}[leftmargin=*]
+  \item \texttt{WiFi.scanComplete()} returns:
+    \begin{itemize}
+      \item \texttt{WIFI\_SCAN\_RUNNING} (-1): Scan in progress
+      \item \texttt{WIFI\_SCAN\_FAILED} (-2): Scan error
+      \item $n \geq 0$: Number of networks found
+    \end{itemize}
+  \item When scan completes, \texttt{processWiFiScanResults()} builds JSON cache
+  \item Non-blocking design prevents UI freezes during 3--5 second scan duration
+\end{itemize}
+
+\paragraph{Lines 1712--1713: DRD timeout management}
+\texttt{drd.loop()} must be called regularly to:
+\begin{itemize}[leftmargin=*]
+  \item Clear double-reset flag after \texttt{DRD\_TIMEOUT} (3 seconds) expires
+  \item Prevent false positives from rapid power cycling
+  \item Update NVS state for next boot cycle
+\end{itemize}
+
+\paragraph{Lines 1715--1764: Periodic status reporting}
+Every 30 seconds, prints comprehensive system state:
+
+\textbf{Access Point metrics (lines 1723--1724):}
+\begin{itemize}[leftmargin=*]
+  \item AP IP address (static 192.168.4.1)
+  \item Number of connected client devices (0--4 typical range)
+\end{itemize}
+
+\textbf{Station mode metrics (lines 1726--1733):}
+\begin{itemize}[leftmargin=*]
+  \item Connection status via \texttt{WiFi.status() == WL\_CONNECTED}
+  \item Assigned IP from DHCP server
+  \item Signal strength in dBm and qualitative grade
+  \item Useful for diagnosing connectivity issues
+\end{itemize}
+
+\textbf{Mode-specific status (lines 1735--1752):}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Email mode}: Configuration validity check
+  \item \textbf{Main mode}: GSM signal strength and carrier name
+  \item Conditional logging reduces serial clutter
+\end{itemize}
+
+\paragraph{Design considerations}
+The loop executes at high frequency (typically 100--1000 Hz) to maintain network responsiveness. No \texttt{delay()} calls present; all timing via \texttt{millis()} comparison. This non-blocking approach ensures:
+\begin{itemize}[leftmargin=*]
+  \item Immediate HTTP request handling
+  \item Responsive captive portal redirection
+  \item Smooth sensor data updates (if real sensors integrated)
+  \item Consistent DRD timeout enforcement
+\end{itemize}
+
+% ============================================================================
+\section{Configuration File Formats}
+% ============================================================================
+
+\subsection{WiFi Configuration (/wifi.json)}
+
+\begin{minted}{json}
+{
+  "staSsid": "MyHomeNetwork",
+  "staPass": "password123",
+  "apSsid": "ESP32-Config",
+  "apPass": "12345678"
+}
+\end{minted}
+
+\paragraph{Field specifications:}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.25\linewidth} p{0.15\linewidth} p{0.55\linewidth}}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+\endhead
+\texttt{staSsid} & String & Station mode SSID. Client network to connect to. Empty string = disabled. \\
+\texttt{staPass} & String & Station mode password. WPA/WPA2 pre-shared key. \\
+\texttt{apSsid} & String & Access Point SSID. Hotspot name for configuration portal. Max 32 characters. \\
+\texttt{apPass} & String & Access Point password. WPA2 minimum 8 characters. Empty = open network (not recommended). \\
+\hline
+\end{longtable}
+
+\subsection{GSM Configuration (/gsm.json)}
+
+\begin{minted}{json}
+{
+  "carrierName": "Dialog",
+  "apn": "internet",
+  "apnUser": "",
+  "apnPass": ""
+}
+\end{minted}
+
+\paragraph{Field specifications:}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.25\linewidth} p{0.15\linewidth} p{0.55\linewidth}}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+\endhead
+\texttt{carrierName} & String & Display name for network operator. User-defined label. \\
+\texttt{apn} & String & Access Point Name for GPRS/LTE data. Carrier-specific (e.g., "internet", "web.gprs.mtnnigeria.net"). \\
+\texttt{apnUser} & String & APN username. Optional; most carriers don't require. \\
+\texttt{apnPass} & String & APN password. Optional; empty for most consumer SIM plans. \\
+\hline
+\end{longtable}
+
+\subsection{User Profile (/user.json)}
+
+\begin{minted}{json}
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "phone": "+94712345678"
+}
+\end{minted}
+
+\paragraph{Field specifications:}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.25\linewidth} p{0.15\linewidth} p{0.55\linewidth}}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+\endhead
+\texttt{name} & String & Full name for display in dashboard. \\
+\texttt{email} & String & Contact email address. Not used for authentication. \\
+\texttt{phone} & String & Phone number in E.164 format (+countrycode...). \\
+\hline
+\end{longtable}
+
+\subsection{Email Configuration (/email.json)}
+
+\begin{minted}{json}
+{
+  "smtpHost": "smtp.gmail.com",
+  "smtpPort": 465,
+  "emailAccount": "myesp32@gmail.com",
+  "emailPassword": "app_specific_password_here",
+  "senderName": "ESP32 Device"
+}
+\end{minted}
+
+\paragraph{Field specifications:}
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.25\linewidth} p{0.15\linewidth} p{0.55\linewidth}}
+\hline
+\textbf{Field} & \textbf{Type} & \textbf{Description} \\
+\hline
+\endhead
+\texttt{smtpHost} & String & SMTP server hostname. Default: \texttt{smtp.gmail.com}. \\
+\texttt{smtpPort} & Integer & SMTP port. 465 (SSL), 587 (TLS), or 25 (plaintext, deprecated). \\
+\texttt{emailAccount} & String & Email address for SMTP authentication. \\
+\texttt{emailPassword} & String & App password (Gmail) or account password. \textbf{Warning}: Stored in plaintext. \\
+\texttt{senderName} & String & Display name in "From" header. \\
+\hline
+\end{longtable}
+
+\paragraph{Security notes:}
+\begin{itemize}[leftmargin=*]
+  \item Passwords stored unencrypted in SPIFFS. Flash encryption recommended for production.
+  \item For Gmail: Use App Passwords (2FA required). Regular passwords rejected.
+  \item \texttt{GET /api/load/email} excludes password field to prevent leakage.
+  \item \texttt{POST /api/save/email} allows password-optional updates.
+\end{itemize}
+
+% ============================================================================
+\section{API Reference}
+% ============================================================================
+
+\subsection{Common Endpoints (Both Modes)}
+
+\subsubsection{GET / (Root)}
+\textbf{Description:} Serves appropriate dashboard HTML based on current mode.
+
+\textbf{Response:} HTML document (dashboard\_html.h or config\_html.h)
+
+\textbf{Headers:}
+\begin{itemize}[leftmargin=*]
+  \item \texttt{Content-Type: text/html}
+  \item \texttt{Access-Control-Allow-Origin: *}
+\end{itemize}
+
+\subsubsection{GET /api/status}
+\textbf{Description:} Returns complete system status including WiFi, mode, and email configuration.
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "mode": "AP+STA",
+  "dashboardMode": "main",
+  "ap": {
+    "ssid": "ESP32-Config",
+    "ip": "192.168.4.1",
+    "mac": "AA:BB:CC:DD:EE:FF",
+    "connectedDevices": 2
+  },
+  "sta": {
+    "ssid": "MyNetwork",
+    "connected": true,
+    "ip": "192.168.1.100",
+    "rssi": -45,
+    "hostname": "esp32",
+    "status": "Connected to MyNetwork",
+    "statusClass": "status-connected"
+  },
+  "email": {
+    "configured": true,
+    "account": "myesp32@gmail.com"
+  }
+}
+\end{minted}
+
+\subsubsection{GET /api/system/info}
+\textbf{Description:} Returns device metadata and runtime statistics.
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "deviceModel": "ESP32 DevKit",
+  "firmwareVersion": "v2.3.0",
+  "lastUpdated": "2025-01-30",
+  "uptime": 123456,
+  "freeHeap": 245632,
+  "chipModel": "ESP32-D0WDQ6",
+  "chipRevision": 1,
+  "cpuFreqMHz": 240
+}
+\end{minted}
+
+\subsubsection{GET /api/sensors}
+\textbf{Description:} Returns current sensor readings (simulated data).
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "temperature": 23.5,
+  "humidity": 67.2,
+  "light": 1024,
+  "timestamp": 123456
+}
+\end{minted}
+
+\subsubsection{GET /api/sensors/test}
+\textbf{Description:} Generates 10 rapid sensor samples for testing (does not affect live sensor state).
+
+\textbf{Response:} JSON array
+\begin{minted}{json}
+[
+  {
+    "temperature": 23.5,
+    "humidity": 67.2,
+    "light": 1024,
+    "index": 0
+  },
+  {
+    "temperature": 23.7,
+    "humidity": 67.0,
+    "light": 1045,
+    "index": 1
+  }
+  // ... 8 more samples
+]
+\end{minted}
+
+\subsubsection{GET /api/mode}
+\textbf{Description:} Returns current dashboard mode and switching instructions.
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "currentMode": "main",
+  "message": "To switch modes, perform a double reset (reset twice within 3 seconds)"
+}
+\end{minted}
+
+\subsubsection{POST /api/mode/switch}
+\textbf{Description:} Informs user that mode switching requires physical reset (does not perform switch).
+
+\textbf{Request body:}
+\begin{minted}{json}
+{
+  "mode": "email"
+}
+\end{minted}
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "success": false,
+  "message": "Mode switching requires device reset. Double-reset to switch.",
+  "currentMode": "main"
+}
+\end{minted}
+
+\subsubsection{GET /api/restart}
+\textbf{Description:} Restarts ESP32 device immediately.
+
+\textbf{Response:} Plain text "Restarting ESP32..." (200ms delay then reboot)
+
+\subsection{Main Dashboard Endpoints (MODE\_MAIN Only)}
+
+\subsubsection{GET /api/gsm/signal?force=true}
+\textbf{Description:} Returns GSM signal strength and quality. Optional \texttt{force=true} bypasses 5-minute cache.
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "ok": true,
+  "dbm": -73,
+  "csq": 20,
+  "grade": "Good"
+}
+\end{minted}
+
+\textbf{Grade thresholds:}
+\begin{itemize}[leftmargin=*]
+  \item Excellent: CSQ $\geq$ 20
+  \item Good: CSQ $\geq$ 15
+  \item Fair: CSQ $\geq$ 10
+  \item Poor: CSQ $<$ 10
+\end{itemize}
+
+\subsubsection{GET /api/gsm/network?force=true}
+\textbf{Description:} Returns GSM network information. Optional \texttt{force=true} bypasses cache.
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "carrierName": "Dialog Axiata",
+  "networkMode": "LTE",
+  "isRegistered": true
+}
+\end{minted}
+
+\subsubsection{POST /api/gsm/call}
+\textbf{Description:} Initiates voice call with 10-second duration and automatic hangup.
+
+\textbf{Request body:}
+\begin{minted}{json}
+{
+  "phoneNumber": "+94712345678"
+}
+\end{minted}
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "success": true,
+  "message": "Call completed (10 seconds)"
+}
+\end{minted}
+
+\subsubsection{POST /api/gsm/call/hangup}
+\textbf{Description:} Immediately terminates active call.
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "success": true,
+  "message": "Call ended successfully"
+}
+\end{minted}
+
+\subsubsection{POST /api/gsm/sms}
+\textbf{Description:} Sends SMS message via GSM modem.
+
+\textbf{Request body:}
+\begin{minted}{json}
+{
+  "phoneNumber": "+94712345678",
+  "message": "Hello from ESP32!"
+}
+\end{minted}
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "success": true,
+  "message": "SMS sent successfully"
+}
+\end{minted}
+
+\subsubsection{GET /api/wifi/scan}
+\textbf{Description:} Starts asynchronous WiFi network scan (non-blocking).
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "status": "scanning",
+  "message": "Scan started, use /api/wifi/scan/results to get results"
+}
+\end{minted}
+
+\subsubsection{GET /api/wifi/scan/results}
+\textbf{Description:} Returns cached WiFi scan results.
+
+\textbf{Response:} JSON array
+\begin{minted}{json}
+[
+  {
+    "ssid": "MyNetwork",
+    "rssi": -45,
+    "encryption": "Secure",
+    "auth": 1,
+    "strength": "strong"
+  },
+  {
+    "ssid": "NeighborWiFi",
+    "rssi": -78,
+    "encryption": "Secure",
+    "auth": 1,
+    "strength": "weak"
+  }
+]
+\end{minted}
+
+\subsubsection{POST /api/wifi/connect}
+\textbf{Description:} Connects to WiFi network with 20-second timeout. Saves credentials on success.
+
+\textbf{Request body:}
+\begin{minted}{json}
+{
+  "ssid": "MyNetwork",
+  "password": "password123"
+}
+\end{minted}
+
+\textbf{Success response:}
+\begin{minted}{json}
+{
+  "success": true,
+  "ssid": "MyNetwork",
+  "ip": "192.168.1.100",
+  "rssi": -45,
+  "message": "Connected successfully"
+}
+\end{minted}
+
+\textbf{Failure response:}
+\begin{minted}{json}
+{
+  "success": false,
+  "error": "Connection failed - check password or signal strength"
+}
+\end{minted}
+
+\subsubsection{POST /api/wifi/disconnect}
+\textbf{Description:} Disconnects from WiFi network and clears saved credentials.
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "success": true,
+  "message": "Disconnected from MyNetwork"
+}
+\end{minted}
+
+\subsubsection{GET /api/load/user}
+\textbf{Description:} Loads user profile configuration.
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "phone": "+94712345678"
+}
+\end{minted}
+
+\subsubsection{POST /api/save/user}
+\textbf{Description:} Saves user profile to SPIFFS.
+
+\textbf{Request body:}
+\begin{minted}{json}
+{
+  "name": "Jane Smith",
+  "email": "jane@example.com",
+  "phone": "+94723456789"
+}
+\end{minted}
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "success": true
+}
+\end{minted}
+
+\subsubsection{GET /api/load/gsm}
+\textbf{Description:} Loads GSM configuration.
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "carrierName": "Dialog",
+  "apn": "internet",
+  "apnUser": "",
+  "apnPass": ""
+}
+\end{minted}
+
+\subsubsection{POST /api/save/gsm}
+\textbf{Description:} Saves GSM configuration to SPIFFS.
+
+\textbf{Request body:}
+\begin{minted}{json}
+{
+  "carrierName": "Mobitel",
+  "apn": "mobitel",
+  "apnUser": "",
+  "apnPass": ""
+}
+\end{minted}
+
+\textbf{Response:} Plain text "OK" (200) or "SAVE\_FAILED" (500)
+
+\subsection{Email Dashboard Endpoints (MODE\_EMAIL Only)}
+
+\subsubsection{GET /api/load/ap}
+\textbf{Description:} Loads Access Point configuration and status.
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "apSsid": "ESP32-Config",
+  "apPass": "12345678",
+  "currentApSsid": "ESP32-Config",
+  "currentApIp": "192.168.4.1",
+  "connectedDevices": 2
+}
+\end{minted}
+
+\subsubsection{POST /api/save/ap}
+\textbf{Description:} Saves Access Point configuration (requires restart to apply).
+
+\textbf{Request body:}
+\begin{minted}{json}
+{
+  "apSsid": "MyESP32Portal",
+  "apPass": "newpass123"
+}
+\end{minted}
+
+\textbf{Validation rules:}
+\begin{itemize}[leftmargin=*]
+  \item SSID: Non-empty, $\leq$ 32 characters
+  \item Password: $\geq$ 8 characters or empty (open network)
+\end{itemize}
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "success": true,
+  "message": "AP configuration saved. Restart required to apply changes."
+}
+\end{minted}
+
+\subsubsection{GET /api/load/email}
+\textbf{Description:} Loads email configuration (excludes password for security).
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "smtpHost": "smtp.gmail.com",
+  "smtpPort": 465,
+  "emailAccount": "myesp32@gmail.com",
+  "senderName": "ESP32 Device"
+}
+\end{minted}
+
+\subsubsection{POST /api/save/email}
+\textbf{Description:} Saves email configuration. Password optional (preserves existing if omitted).
+
+\textbf{Request body:}
+\begin{minted}{json}
+{
+  "smtpHost": "smtp.gmail.com",
+  "smtpPort": 465,
+  "emailAccount": "newemail@gmail.com",
+  "emailPassword": "app_password_here",
+  "senderName": "My ESP32"
+}
+\end{minted}
+
+\textbf{Response:} JSON object
+\begin{minted}{json}
+{
+  "success": true
+}
+\end{minted}
+
+\subsubsection{POST /api/email/gsm/send}
+\textbf{Description:} Sends email via GSM GPRS connection.
+
+\textbf{Request body:}
+\begin{minted}{json}
+{
+  "to": "recipient@example.com",
+  "subject": "Alert from ESP32",
+  "content": "Temperature threshold exceeded: 32.5°C"
+}
+\end{minted}
+
+\textbf{Success response:}
+\begin{minted}{json}
+{
+  "success": true,
+  "message": "GSM email sent successfully"
+}
+\end{minted}
+
+\textbf{Failure response:}
+\begin{minted}{json}
+{
+  "success": false,
+  "error": "Failed to send GSM email"
+}
+\end{minted}
+
+\subsubsection{POST /api/email/send?via=gsm}
+\textbf{Description:} Alternative email endpoint with method parameter (GSM only supported).
+
+\textbf{Request body:} Same as \texttt{/api/email/gsm/send}
+
+\textbf{Response:} Same as \texttt{/api/email/gsm/send}
+
+% ============================================================================
+\section{Captive Portal Implementation}
+% ============================================================================
+
+\subsection{DNS Redirection Mechanism}
+
+The captive portal forces connected devices to open the configuration dashboard by intercepting all DNS queries and redirecting them to the ESP32's IP address.
+
+\paragraph{Implementation details:}
+\begin{enumerate}[leftmargin=*]
+  \item DNSServer listens on port 53 (standard DNS port)
+  \item Wildcard domain "*" configured to match all queries
+  \item All lookups return 192.168.4.1 (ESP32 AP IP)
+  \item Client devices detect captive portal and display popup
+\end{enumerate}
+
+\subsection{OS-Specific Detection URLs}
+
+Different operating systems use specific URLs to detect captive portals:
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.2\linewidth} p{0.4\linewidth} p{0.35\linewidth}}
+\hline
+\textbf{OS} & \textbf{Detection URL} & \textbf{Expected Response} \\
+\hline
+\endhead
+Android & \texttt{connectivitycheck.gstatic.com/generate\_204} & HTTP 204 No Content \\
+iOS/macOS & \texttt{captive.apple.com/hotspot-detect.html} & HTML with "Success" \\
+Windows & \texttt{msftconnecttest.com/ncsi.txt} & Text "Microsoft NCSI" \\
+Generic & \texttt{detectportal.firefox.com/success.txt} & Text "success" \\
+\hline
+\end{longtable}
+
+\subsection{Redirect Logic}
+
+\begin{minted}{cpp}
+void handleNotFound() {
+  String host = server.hostHeader();
+  
+  if (host.startsWith("connectivitycheck.") || 
+      host.startsWith("captive.apple.com") ||
+      host.startsWith("msftconnecttest.") || 
+      host.startsWith("detectportal.")) {
+    // Redirect to dashboard
+    server.sendHeader("Location", "http://192.168.4.1/");
+    server.send(302, "text/plain", "");
+  } else {
+    // Serve dashboard for unknown paths
+    handleRoot();
+  }
+}
+\end{minted}
+
+\paragraph{Behavior:}
+\begin{itemize}[leftmargin=*]
+  \item Detection URLs: HTTP 302 redirect to dashboard
+  \item Unknown paths: Directly serve dashboard HTML
+  \item Ensures captive portal popup on all platforms
+\end{itemize}
+
+% ============================================================================
+\section{Security Considerations}
+% ============================================================================
+
+\subsection{Current Implementation}
+
+\paragraph{Vulnerabilities present in v2.3.0:}
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{No authentication}: Web interface open to anyone connected to AP
+  \item \textbf{Plaintext passwords}: Email and WiFi credentials stored unencrypted in SPIFFS
+  \item \textbf{No HTTPS}: HTTP-only communication (credentials sent in clear)
+  \item \textbf{Open CORS}: \texttt{Access-Control-Allow-Origin: *} permits requests from any domain
+  \item \textbf{No rate limiting}: API endpoints vulnerable to brute force
+  \item \textbf{No input sanitization}: Potential for command injection in SMS/call phone numbers
+\end{enumerate}
+
+\subsection{Recommended Mitigations}
+
+\paragraph{Production deployment checklist:}
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Enable flash encryption}: Protect SPIFFS data at rest
+  \item \textbf{Implement HTTPS}: Use self-signed certificates for TLS
+  \item \textbf{Add authentication}: HTTP Basic Auth or session tokens
+  \item \textbf{Restrict CORS}: Whitelist specific origins or disable
+  \item \textbf{Input validation}: Sanitize phone numbers, email addresses, SSID strings
+  \item \textbf{Rate limiting}: Throttle API requests per IP address
+  \item \textbf{Change default credentials}: Require AP password change on first boot
+  \item \textbf{Firmware signing}: Prevent unauthorized code uploads
+\end{enumerate}
+
+\subsection{Attack Surface Analysis}
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.25\linewidth} p{0.2\linewidth} p{0.5\linewidth}}
+\hline
+\textbf{Attack Vector} & \textbf{Severity} & \textbf{Mitigation} \\
+\hline
+\endhead
+WiFi credential theft & Critical & Flash encryption, HTTPS \\
+Email password exposure & Critical & Flash encryption, HTTPS, app passwords \\
+Unauthorized configuration & High & Authentication, session management \\
+SMS/call spam & Medium & Rate limiting, input validation \\
+DNS spoofing & Low & Inherent to captive portal design \\
+XSS in dashboard & Medium & Content-Security-Policy headers \\
+CSRF attacks & Medium & CSRF tokens, SameSite cookies \\
+\hline
+\end{longtable}
+
+% ============================================================================
+\section{Memory and Performance Analysis}
+% ============================================================================
+
+\subsection{Flash Memory Usage}
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.3\linewidth} p{0.2\linewidth} p{0.45\linewidth}}
+\hline
+\textbf{Component} & \textbf{Size} & \textbf{Notes} \\
+\hline
+\endhead
+Program code & ~450 KB & Compiled firmware (.bin) \\
+dashboard\_html.h & ~250 KB & Main dashboard (gzipped in some builds) \\
+config\_html.h & ~180 KB & Email configuration dashboard \\
+SPIFFS partition & 1.5 MB & Configuration files, future data logging \\
+OTA partition & 1.5 MB & For over-the-air firmware updates \\
+\textbf{Total flash required} & \textbf{~4 MB} & Standard ESP32 has 4--16 MB \\
+\hline
+\end{longtable}
+
+\subsection{RAM Usage}
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.3\linewidth} p{0.2\linewidth} p{0.45\linewidth}}
+\hline
+\textbf{Component} & \textbf{Heap} & \textbf{Notes} \\
+\hline
+\endhead
+WiFi stack & ~35 KB & ESP-IDF WiFi driver \\
+HTTP server & ~15 KB & WebServer instance + buffers \\
+DNS server & ~2 KB & Minimal overhead \\
+JSON documents & ~8 KB & Peak during large responses \\
+String buffers & ~5 KB & Scan results, status JSON \\
+GSM serial buffers & ~2 KB & AT command I/O \\
+\textbf{Typical free heap} & \textbf{~240 KB} & Out of 320 KB total DRAM \\
+\hline
+\end{longtable}
+
+\paragraph{Memory optimization strategies:}
+\begin{itemize}[leftmargin=*]
+  \item \texttt{server.send\_P()}: Streams HTML from flash (PROGMEM) without RAM copy
+  \item JSON document sizing: Exact allocations prevent heap fragmentation
+  \item \texttt{WiFi.scanDelete()}: Frees scan result memory immediately
+  \item Static cache strings: Reuse \texttt{lastScanJson} buffer
+  \item Const string literals: Stored in flash, not duplicated in RAM
+\end{itemize}
+
+\subsection{Performance Benchmarks}
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.35\linewidth} p{0.25\linewidth} p{0.35\linewidth}}
+\hline
+\textbf{Operation} & \textbf{Duration} & \textbf{Notes} \\
+\hline
+\endhead
+Boot to HTTP ready & 2--3 seconds & Includes WiFi AP start, SPIFFS mount \\
+WiFi scan & 3--5 seconds & Async, doesn't block HTTP \\
+GSM signal query & 500--1500 ms & Hardware AT command latency \\
+SPIFFS config load & 10--30 ms & Per file, cached in RAM \\
+JSON serialization (2KB) & 5--15 ms & Status endpoint response \\
+HTTP request handling & 5--50 ms & Varies by endpoint complexity \\
+Email via GSM & 10--30 seconds & GPRS connection + SMTP handshake \\
+SMS send & 2--5 seconds & Modem processing time \\
+Voice call initiation & 3--8 seconds & Network routing delay \\
+\hline
+\end{longtable}
+
+\subsection{Network Throughput}
+
+\paragraph{HTTP server capacity:}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Concurrent connections}: 4--5 max (synchronous server limitation)
+  \item \textbf{Request rate}: ~20 requests/second sustained
+  \item \textbf{Dashboard load time}: 1--3 seconds (depends on client bandwidth)
+  \item \textbf{API response time}: 10--100 ms average (excluding GSM queries)
+\end{itemize}
+
+\paragraph{WiFi performance:}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{AP mode range}: 30--100 meters (depends on environment)
+  \item \textbf{STA mode throughput}: 5--10 Mbps typical
+  \item \textbf{Dual-mode penalty}: ~10\% throughput reduction vs single mode
+\end{itemize}
+
+% ============================================================================
+\section{Troubleshooting Guide}
+% ============================================================================
+
+\subsection{Common Issues and Solutions}
+
+\subsubsection{Issue: Cannot access configuration portal}
+
+\paragraph{Symptoms:}
+\begin{itemize}[leftmargin=*]
+  \item No WiFi network visible
+  \item "Config panel" SSID not appearing
+  \item Captive portal not opening automatically
+\end{itemize}
+
+\paragraph{Diagnosis steps:}
+\begin{enumerate}[leftmargin=*]
+  \item Check serial console for AP startup messages
+  \item Verify AP SSID/password in \texttt{/wifi.json}
+  \item Confirm ESP32 not stuck in boot loop (check for panic messages)
+  \item Test manual connection to 192.168.4.1 instead of relying on captive portal
+\end{enumerate}
+
+\paragraph{Solutions:}
+\begin{itemize}[leftmargin=*]
+  \item Erase flash and reprogram: \texttt{esptool.py erase\_flash}
+  \item Check power supply (USB must provide 500+ mA)
+  \item Verify GPIO pins not shorted (especially GPIO16/17 for GSM)
+  \item Delete \texttt{/wifi.json} to restore default AP credentials
+\end{itemize}
+
+\subsubsection{Issue: Double reset detection not working}
+
+\paragraph{Symptoms:}
+\begin{itemize}[leftmargin=*]
+  \item Always boots to main dashboard despite double-reset
+  \item DRD timeout too short/long
+  \item Mode stuck in one configuration
+\end{itemize}
+
+\paragraph{Diagnosis:}
+\begin{enumerate}[leftmargin=*]
+  \item Check serial output for "DOUBLE RESET DETECTED!" message
+  \item Verify NVS partition not corrupted
+  \item Confirm reset button timing (must be $<$ 3 seconds between presses)
+\end{enumerate}
+
+\paragraph{Solutions:}
+\begin{itemize}[leftmargin=*]
+  \item Increase \texttt{DRD\_TIMEOUT} to 5000 ms (5 seconds)
+  \item Erase NVS partition: \texttt{esptool.py erase\_region 0x9000 0x5000}
+  \item Use hardware reset button, not power cycling
+  \item Ensure \texttt{drd.loop()} called in main loop
+\end{itemize}
+
+\subsubsection{Issue: GSM modem not responding}
+
+\paragraph{Symptoms:}
+\begin{itemize}[leftmargin=*]
+  \item Signal strength always 0 or -999
+  \item SMS/call operations timeout
+  \item "GSM: Not initialized" in status logs
+\end{itemize}
+
+\paragraph{Diagnosis:}
+\begin{enumerate}[leftmargin=*]
+  \item Check Serial2 wiring (RX=GPIO16, TX=GPIO17)
+  \item Verify modem power supply (some modules require 2A @ 5V)
+  \item Test AT commands manually via serial monitor
+  \item Confirm SIM card inserted and PIN disabled
+\end{enumerate}
+
+\paragraph{Solutions:}
+\begin{itemize}[leftmargin=*]
+  \item Swap RX/TX connections (common wiring mistake)
+  \item Add external power supply for modem (don't rely on ESP32 regulator)
+  \item Increase serial timeout in \texttt{GSM\_Test.cpp}
+  \item Check APN configuration matches carrier requirements
+  \item Verify antenna connected properly
+\end{itemize}
+
+\subsubsection{Issue: WiFi connection fails}
+
+\paragraph{Symptoms:}
+\begin{itemize}[leftmargin=*]
+  \item \texttt{/api/wifi/connect} returns "Connection failed"
+  \item Station mode shows "Not connected" despite correct credentials
+  \item Connection timeout after 20 seconds
+\end{itemize}
+
+\paragraph{Diagnosis:}
+\begin{enumerate}[leftmargin=*]
+  \item Check router SSID visibility (hidden networks require special handling)
+  \item Verify password correctness (case-sensitive)
+  \item Confirm router not using unsupported security (WEP, WPA3-only)
+  \item Check MAC address filtering on router
+\end{enumerate}
+
+\paragraph{Solutions:}
+\begin{itemize}[leftmargin=*]
+  \item Use 2.4 GHz network (ESP32 doesn't support 5 GHz)
+  \item Temporarily disable router security for testing
+  \item Increase connection timeout in \texttt{handleWiFiConnect()}
+  \item Check signal strength (RSSI must be $>$ -80 dBm)
+  \item Clear saved WiFi config: delete \texttt{/wifi.json} and restart
+\end{itemize}
+
+\subsubsection{Issue: Email sending via GSM fails}
+
+\paragraph{Symptoms:}
+\begin{itemize}[leftmargin=*]
+  \item "Failed to send GSM email" error
+  \item SMTP authentication rejection
+  \item Timeout during email transmission
+\end{itemize}
+
+\paragraph{Diagnosis:}
+\begin{enumerate}[leftmargin=*]
+  \item Verify email configuration via \texttt{/api/load/email}
+  \item Check GPRS data connection (APN must be correct)
+  \item Confirm Gmail app password, not regular password
+  \item Test SMTP server accessibility from mobile network
+\end{enumerate}
+
+\paragraph{Solutions:}
+\begin{itemize}[leftmargin=*]
+  \item For Gmail: Generate app password at \url{https://myaccount.google.com/apppasswords}
+  \item Enable "Less secure app access" for non-Gmail servers
+  \item Verify APN settings match carrier documentation
+  \item Check firewall rules on SMTP server (allow port 465)
+  \item Increase SMTP timeout in \texttt{SMTP.cpp}
+  \item Test with alternative SMTP server (e.g., Mailgun, SendGrid)
+\end{itemize}
+
+\subsubsection{Issue: SPIFFS mount failure}
+
+\paragraph{Symptoms:}
+\begin{itemize}[leftmargin=*]
+  \item "SPIFFS mount failed" on boot
+  \item Configuration not persisting across reboots
+  \item Crash during config save operations
+\end{itemize}
+
+\paragraph{Diagnosis:}
+\begin{enumerate}[leftmargin=*]
+  \item Check partition table in \texttt{platformio.ini}
+  \item Verify SPIFFS partition size and offset
+  \item Look for flash corruption errors in serial output
+\end{enumerate}
+
+\paragraph{Solutions:}
+\begin{itemize}[leftmargin=*]
+  \item Format SPIFFS: \texttt{SPIFFS.format()} in setup (one-time)
+  \item Upload SPIFFS image with data: \texttt{pio run -t uploadfs}
+  \item Increase partition size in \texttt{partitions.csv}
+  \item Check for flash memory hardware failure (rare)
+\end{itemize}
+
+\subsection{Serial Debug Commands}
+
+\paragraph{Enable verbose WiFi debugging:}
+\begin{minted}{cpp}
+// Add to setup()
+Serial.setDebugOutput(true);
+WiFi.setOutputPower(20);  // Max TX power for debugging
+\end{minted}
+
+\paragraph{Manual SPIFFS inspection:}
+\begin{minted}{cpp}
+// Temporary debug code in setup()
+File root = SPIFFS.open("/");
+File file = root.openNextFile();
+while (file) {
+  Serial.printf("File: %s, Size: %d\n", file.name(), file.size());
+  file = root.openNextFile();
+}
+\end{minted}
+
+\paragraph{GSM modem raw AT commands:}
+\begin{minted}{cpp}
+// Send directly via Serial2
+Serial2.println("AT");           // Test connectivity
+Serial2.println("AT+CSQ");       // Check signal quality
+Serial2.println("AT+COPS?");     // Query operator
+Serial2.println("AT+CREG?");     // Registration status
+\end{minted}
+
+% ============================================================================
+\section{Extension and Customization}
+% ============================================================================
+
+\subsection{Adding New Sensors}
+
+\paragraph{Example: Integrate DHT22 temperature/humidity sensor}
+
+\textbf{Step 1: Include library}
+\begin{minted}{cpp}
+#include <DHT.h>
+#define DHT_PIN 4
+#define DHT_TYPE DHT22
+DHT dht(DHT_PIN, DHT_TYPE);
+\end{minted}
+
+\textbf{Step 2: Initialize in setup()}
+\begin{minted}{cpp}
+dht.begin();
+Serial.println(" DHT22 sensor initialized");
+\end{minted}
+
+\textbf{Step 3: Replace simulated data in SensorData::update()}
+\begin{minted}{cpp}
+void update() {
+  if (millis() - lastUpdate > UPDATE_INTERVAL) {
+    temperature = dht.readTemperature();  // Real data
+    humidity = dht.readHumidity();        // Real data
+    
+    if (isnan(temperature) || isnan(humidity)) {
+      Serial.println(" DHT read failed");
+      return;
+    }
+    
+    lastUpdate = millis();
+  }
+}
+\end{minted}
+
+\subsection{Implementing User Authentication}
+
+\paragraph{Basic HTTP authentication example:}
+
+\textbf{Step 1: Add credentials to configuration}
+\begin{minted}{cpp}
+struct AuthConfig {
+  String username = "admin";
+  String password = "esp32";
+  // Load/save methods similar to other configs
+} authCfg;
+\end{minted}
+
+\textbf{Step 2: Create authentication middleware}
+\begin{minted}{cpp}
+bool checkAuth() {
+  if (!server.authenticate(authCfg.username.c_str(), 
+                           authCfg.password.c_str())) {
+    server.requestAuthentication();
+    return false;
+  }
+  return true;
+}
+\end{minted}
+
+\textbf{Step 3: Protect endpoints}
+\begin{minted}{cpp}
+server.on("/api/wifi/connect", HTTP_POST, []() {
+  if (!checkAuth()) return;
+  // Original handler code...
+});
+\end{minted}
+
+\subsection{Adding HTTPS Support}
+
+\paragraph{Requires ESP32 HTTPS server library:}
+
+\textbf{Step 1: Generate self-signed certificate}
+\begin{minted}{bash}
+openssl req -x509 -newkey rsa:2048 -keyout key.pem \
+  -out cert.pem -days 365 -nodes
+\end{minted}
+
+\textbf{Step 2: Convert to C header}
+\begin{minted}{bash}
+xxd -i cert.pem > cert.h
+xxd -i key.pem > key.h
+\end{minted}
+
+\textbf{Step 3: Replace WebServer with HTTPSServer}
+\begin{minted}{cpp}
+#include <HTTPSServer.hpp>
+#include <SSLCert.hpp>
+#include "cert.h"
+#include "key.h"
+
+SSLCert cert = SSLCert(cert_pem, cert_pem_len, 
+                       key_pem, key_pem_len);
+HTTPSServer server = HTTPSServer(&cert);
+\end{minted}
+
+\subsection{Data Logging to SD Card}
+
+\paragraph{Log sensor data and events to SD card:}
+
+\textbf{Step 1: Add SD library}
+\begin{minted}{cpp}
+#include <SD.h>
+#define SD_CS 5  // Chip select pin
+\end{minted}
+
+\textbf{Step 2: Initialize in setup()}
+\begin{minted}{cpp}
+if (!SD.begin(SD_CS)) {
+  Serial.println(" SD card mount failed");
+} else {
+  Serial.println(" SD card ready");
+}
+\end{minted}
+
+\textbf{Step 3: Create logging function}
+\begin{minted}{cpp}
+void logSensorData() {
+  File logFile = SD.open("/sensors.csv", FILE_APPEND);
+  if (logFile) {
+    String logEntry = String(millis()) + "," +
+                      String(sensorData.temperature) + "," +
+                      String(sensorData.humidity) + "," +
+                      String(sensorData.light) + "\n";
+    logFile.print(logEntry);
+    logFile.close();
+  }
+}
+\end{minted}
+
+\textbf{Step 4: Call periodically in loop()}
+\begin{minted}{cpp}
+static unsigned long lastLog = 0;
+if (millis() - lastLog > 60000) {  // Log every minute
+  logSensorData();
+  lastLog = millis();
+}
+\end{minted}
+
+\subsection{MQTT Integration}
+
+\paragraph{Publish sensor data to MQTT broker:}
+
+\textbf{Step 1: Add PubSubClient library}
+\begin{minted}{cpp}
+#include <PubSubClient.h>
+WiFiClient espClient;
+PubSubClient mqtt(espClient);
+\end{minted}
+
+\textbf{Step 2: Configure broker}
+\begin{minted}{cpp}
+mqtt.setServer("broker.hivemq.com", 1883);
+// Or use local broker: mqtt.setServer("192.168.1.10", 1883);
+\end{minted}
+
+\textbf{Step 3: Connect and publish}
+\begin{minted}{cpp}
+void publishSensorData() {
+  if (!mqtt.connected()) {
+    mqtt.connect("ESP32Client");
+  }
+  
+  if (mqtt.connected()) {
+    String payload = sensorData.toJson();
+    mqtt.publish("esp32/sensors", payload.c_str());
+  }
+}
+\end{minted}
+
+\textbf{Step 4: Add MQTT endpoint}
+\begin{minted}{cpp}
+server.on("/api/mqtt/publish", HTTP_POST, []() {
+  publishSensorData();
+  sendJson(200, "{\"success\":true}");
+});
+\end{minted}
+
+\subsection{OTA (Over-The-Air) Updates}
+
+\paragraph{Enable firmware updates via WiFi:}
+
+\textbf{Step 1: Include OTA library}
+\begin{minted}{cpp}
+#include <ArduinoOTA.h>
+\end{minted}
+
+\textbf{Step 2: Configure in setup()}
+\begin{minted}{cpp}
+ArduinoOTA.setHostname("esp32-config-panel");
+ArduinoOTA.setPassword("admin");  // OTA password
+
+ArduinoOTA.onStart([]() {
+  Serial.println(" OTA update started");
+});
+
+ArduinoOTA.onEnd([]() {
+  Serial.println("\n OTA update complete");
+});
+
+ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+  Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+});
+
+ArduinoOTA.onError([](ota_error_t error) {
+  Serial.printf(" OTA Error[%u]: ", error);
+});
+
+ArduinoOTA.begin();
+\end{minted}
+
+\textbf{Step 3: Handle in loop()}
+\begin{minted}{cpp}
+void loop() {
+  ArduinoOTA.handle();
+  // Rest of loop code...
+}
+\end{minted}
+
+\textbf{Step 4: Upload via network}
+\begin{minted}{bash}
+# PlatformIO
+pio run -t upload --upload-port esp32-config-panel.local
+
+# Arduino IDE
+# Tools > Port > Network Ports > esp32-config-panel
+\end{minted}
+
+% ============================================================================
+\section{Conclusion}
+% ============================================================================
+
+This document has provided comprehensive line-by-line documentation for the ESP32 IIoT Configuration Panel firmware (v2.3.0). The system implements a sophisticated dual-dashboard architecture with the following key achievements:
+
+
+
+
+\subsection{Future Development Roadmap}
+
+Potential enhancements for future versions:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{v2.4.0}: User authentication, HTTPS support
+  \item \textbf{v2.5.0}: MQTT integration, webhooks for alerts
+  \item \textbf{v3.0.0}: Multi-device management, cloud dashboard
+  \item \textbf{v3.1.0}: Custom automation rules, scheduling
+  \item \textbf{v3.2.0}: OTA configuration.
+  
+\end{itemize}
+
+
+
+\vspace{1cm}
+
+\noindent\textbf{Document Revision History:}
+\begin{itemize}[leftmargin=*]
+  \item v1.0 (2025-01-30): Initial comprehensive documentation
+  \item Firmware version documented: v2.3.0
+  \item Total pages: \pageref{LastPage}
+  \item Word count: ~15,000 words
+\end{itemize}
+
+\vspace{1cm}
+
+
+\end{document}
