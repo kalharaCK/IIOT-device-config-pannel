@@ -376,6 +376,46 @@ struct SensorData {
   }
 } sensorData;
 
+// ----------------------------------------------------------------------------
+// SENSOR TEST SAMPLING (10 quick samples without continuous updates)
+// ----------------------------------------------------------------------------
+
+/**
+ * @brief Build JSON array with a fixed number of simulated sensor samples
+ * Generates samples immediately without waiting for UPDATE_INTERVAL.
+ */
+String buildSensorTestSamplesJson(size_t sampleCount) {
+  // Use local copies to avoid mutating the live sensor state while sampling
+  float t = sensorData.temperature;
+  float h = sensorData.humidity;
+  float l = sensorData.light;
+
+  DynamicJsonDocument doc(1024);
+  JsonArray arr = doc.to<JsonArray>();
+
+  for (size_t i = 0; i < sampleCount; i++) {
+    // Apply same variation model as live updates, but faster and locally
+    t += (random(-20, 21) / 100.0f);
+    t = constrain(t, 18.0f, 32.0f);
+
+    h += (random(-30, 31) / 100.0f);
+    h = constrain(h, 30.0f, 90.0f);
+
+    l += (random(-200, 201) / 10.0f);
+    l = constrain(l, 0.0f, 2000.0f);
+
+    JsonObject sample = arr.createNestedObject();
+    sample["temperature"] = round(t * 10) / 10.0; // 1dp
+    sample["humidity"] = round(h * 10) / 10.0;    // 1dp
+    sample["light"] = round(l);                   // integer
+    sample["index"] = (int)i;
+  }
+
+  String out;
+  serializeJson(doc, out);
+  return out;
+}
+
 // ============================================================================
 // GSM CACHE
 // ============================================================================
@@ -742,11 +782,18 @@ void setupMainDashboardRoutes() {
   
   /**
    * GET /api/sensors
-   * Returns current sensor readings (temperature, humidity, light)
+   * Returns current sensor snapshot without mutating/simulating values
    */
   server.on("/api/sensors", HTTP_GET, []() {
-    sensorData.update(); // Update sensor readings
     sendJson(200, sensorData.toJson());
+  });
+
+  /**
+   * GET /api/sensors/test
+   * Returns 10 immediate sensor samples without relying on periodic updates
+   */
+  server.on("/api/sensors/test", HTTP_GET, []() {
+    sendJson(200, buildSensorTestSamplesJson(10));
   });
   
   // ============================================================================
@@ -1234,11 +1281,18 @@ void setupEmailDashboardRoutes() {
   
   /**
    * GET /api/sensors
-   * Returns current sensor readings (temperature, humidity, light)
+   * Returns current sensor snapshot without mutating/simulating values
    */
   server.on("/api/sensors", HTTP_GET, []() {
-    sensorData.update(); // Update sensor readings
     sendJson(200, sensorData.toJson());
+  });
+
+  /**
+   * GET /api/sensors/test
+   * Returns 10 immediate sensor samples without relying on periodic updates
+   */
+  server.on("/api/sensors/test", HTTP_GET, []() {
+    sendJson(200, buildSensorTestSamplesJson(10));
   });
   
   // ============================================================================

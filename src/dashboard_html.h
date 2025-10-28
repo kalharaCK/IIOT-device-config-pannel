@@ -662,6 +662,17 @@ button:disabled {
             <span class="status-label">Last Update</span>
             <span class="status-value" id="sensorLastUpdate">--</span>
           </div>
+          <div class="button-group">
+            <div class="button-row">
+              <button class="btn-info btn-full" onclick="triggerSensorTest()" id="sensorTestBtn">Trigger Test Sensor Data (10 samples)</button>
+              <button class="btn-secondary btn-full" onclick="resumeLiveSensors()" id="sensorResumeBtn" disabled>Resume Live Updates</button>
+            </div>
+          </div>
+          <div id="sensorTestMessage" class="message" style="display:none;"></div>
+          <div class="form-group" style="margin-top:12px;">
+            <label>Test Samples</label>
+            <div id="sensorTestList" style="max-height:160px; overflow:auto; border:1px solid #475569; border-radius:6px; padding:8px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 12px;"></div>
+          </div>
         </div>
 
         <!-- Automation Thresholds -->
@@ -729,6 +740,8 @@ let availableNetworks = [];
 let selectedNetworkData = null;
 let gsmPoll = null;
 let currentMode = 'wifi'; // Default to WiFi mode
+let liveSensorInterval = null; // interval id for live updates (unused)
+let isTestMode = false; // test gate (no live updates by default)
 
 // ---------- Utilities ----------
 async function apiGet(url) {
@@ -856,8 +869,7 @@ function showTab(tabId) {
   if (tabId === 'gsm') startGsmPoll(); 
   else stopGsmPoll();
   
-  // Update sensors when device tab is shown
-  if (tabId === 'device') updateSensors();
+  // No auto sensor update on tab switch
 }
 
 // ---------- Password toggle ----------
@@ -1642,6 +1654,63 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('sensorLastUpdate').textContent = 'Error';
     }
   };
+
+  // Trigger test sampling (10 samples) and display results; pause live updates
+  window.triggerSensorTest = async function() {
+    const btn = document.getElementById('sensorTestBtn');
+    const resumeBtn = document.getElementById('sensorResumeBtn');
+    const list = document.getElementById('sensorTestList');
+    const msg = document.getElementById('sensorTestMessage');
+
+    try {
+      // Pause live updates
+      isTestMode = true;
+      if (btn) { btn.disabled = true; btn.classList.add('loading'); btn.textContent = 'Collecting 10 samples...'; }
+      if (resumeBtn) resumeBtn.disabled = false;
+      list.innerHTML = '';
+      msg.style.display = 'none';
+
+      const r = await fetch('/api/sensors/test');
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const samples = await r.json();
+      if (!Array.isArray(samples)) throw new Error('Invalid response');
+
+      // Render samples
+      samples.forEach((s, i) => {
+        const div = document.createElement('div');
+        div.textContent = `#${i+1}  T: ${s.temperature}°C  H: ${s.humidity}%  L: ${s.light} lx`;
+        list.appendChild(div);
+      });
+
+      // Update current readouts to last sample
+      const last = samples[samples.length - 1];
+      if (last) {
+        document.getElementById('temperatureValue').textContent = `${last.temperature}°C`;
+        document.getElementById('humidityValue').textContent = `${last.humidity}%`;
+        document.getElementById('lightValue').textContent = `${last.light} lx`;
+        document.getElementById('sensorLastUpdate').textContent = new Date().toLocaleTimeString();
+        updateSensorStatus('temperatureValue', last.temperature, 18, 32);
+        updateSensorStatus('humidityValue', last.humidity, 30, 90);
+        updateSensorStatus('lightValue', last.light, 0, 2000);
+      }
+
+      // Notify success
+      showMessage('sensorTestMessage', 'Collected 10 test samples.', 'success');
+    } catch (e) {
+      console.error('Sensor test error:', e);
+      showMessage('sensorTestMessage', 'Sensor test failed: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.classList.remove('loading'); btn.textContent = 'Trigger Test Sensor Data (10 samples)'; btn.disabled = false; }
+    }
+  };
+
+  // Resume button now only clears test mode; does not auto-fetch or start polling
+  window.resumeLiveSensors = function() {
+    isTestMode = false;
+    const resumeBtn = document.getElementById('sensorResumeBtn');
+    if (resumeBtn) resumeBtn.disabled = true;
+    showMessage('sensorTestMessage', 'Live updates remain off. Click Trigger to fetch samples.', 'info');
+  };
   
   // Helper function to add visual status indicators
   window.updateSensorStatus = function(elementId, value, min, max) {
@@ -1707,14 +1776,12 @@ document.addEventListener('DOMContentLoaded', function() {
   loadUser();
   // email config load removed
   
-  // Initial sensor update
-  updateSensors();
+  // No initial sensor update; only on explicit trigger
 
   // Refresh status every 10s
   setInterval(refreshStatus, 10000);
   
-  // Update sensors every 3 seconds
-  setInterval(updateSensors, 3000);
+  // No continuous sensor polling
 
   // Live email validation
   const emailInputEl = document.getElementById('userEmail');
