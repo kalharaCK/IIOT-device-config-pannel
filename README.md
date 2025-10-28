@@ -508,9 +508,9 @@ View detailed logs in Serial Monitor at 115200 baud.
 ## ✨ Future Implimentation
 
 
-1. **OTA implimentations**
-2. **Send Emails via WiFi**
-3. **Real sensor and actuator integration**
+1. **OTA implimentations.**
+2. **Send Emails via WiFi.**
+3. **Real sensor and actuator integration.**
 
 
 
@@ -742,12 +742,6 @@ State 5: Registered (Roaming) ⚠
 
 Recommended State for Operations: 1 (Home) or 5 (Roaming)
 ```
-
-## 📞 Support
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/esp32-config-panel/issues)
-- **Email**: your-email@example.com
-- **Documentation**: [Wiki](https://github.com/yourusername/esp32-config-panel/wiki)
 
 ## 🔄 Changelog
 
