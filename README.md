@@ -505,34 +505,14 @@ View detailed logs in Serial Monitor at 115200 baud.
 - Always use app-specific passwords
 - Revoke unused app passwords regularly
 
-## 🤝 Contributing
+## ✨ Future Implimentation
 
-Contributions are welcome! Please follow these guidelines:
 
-1. **Fork the repository**
-2. **Create feature branch**: `git checkout -b feature/AmazingFeature`
-3. **Commit changes**: `git commit -m 'Add AmazingFeature'`
-4. **Push to branch**: `git push origin feature/AmazingFeature`
-5. **Open Pull Request**
+1. **OTA implimentations**
+2. **Send Emails via WiFi**
+3. **Real sensor and actuator integration**
 
-### Code Style
-- Follow existing code formatting
-- Add comments for complex logic
-- Update documentation for new features
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 👥 Authors
-
-- **Your Name** - *Initial work* - [YourGitHub](https://github.com/yourusername)
-
-## 🙏 Acknowledgments
-
-- ESP32 community for excellent documentation
-- ArduinoJson library by Benoit Blanchon
-- SIM800L library contributors
 
 ## 📊 Operation Flow Diagrams
 
